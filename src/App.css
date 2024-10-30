@@ -1,0 +1,201 @@
+* {
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  transition: background-color 0.5s ease, color 0.5s ease, box-shadow 0.5s ease;
+}
+
+.App {
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: background-color 0.5s ease;
+}
+
+.App-logo {
+  height: 40vmin;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .App-logo {
+    animation: App-logo-spin infinite 20s linear;
+  }
+}
+
+.App-header {
+  background-color: #282c34;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(10px + 2vmin);
+  color: white;
+}
+
+.App-link {
+  color: #61dafb;
+}
+
+@keyframes App-logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.MuiButtonBase-root {
+  position: relative;
+  overflow: hidden !important;
+}
+
+.MuiTouchRipple-root {
+  opacity: 0.4 !important;
+}
+
+.MuiTouchRipple-rippleVisible {
+  animation-duration: 300ms !important;
+}
+
+.MuiSpeedDial-root {
+  transform: scale(1.2);
+}
+
+.MuiSpeedDialAction-staticTooltipLabel {
+  font-size: 1rem;
+  padding: 8px 16px;
+}
+
+@media (max-width: 600px) {
+  .MuiContainer-root {
+    padding: 8px !important;
+  }
+  
+  .MuiButton-root {
+    min-height: 56px !important;
+  }
+  
+  .MuiSpeedDial-root {
+    transform: scale(1.4);
+  }
+}
+
+/* Deshabilitar el zoom en dispositivos móviles al tocar inputs */
+@media screen and (max-width: 768px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Añadir estos estilos */
+.calculator-button {
+  touch-action: manipulation !important;
+  -webkit-tap-highlight-color: transparent !important;
+  user-select: none !important;
+  min-height: 60px !important;
+}
+
+@media (max-width: 600px) {
+  .calculator-button {
+    min-height: 70px !important;
+    font-size: 1.5rem !important;
+  }
+  
+  .calculator-display {
+    font-size: 2.5rem !important;
+    padding: 20px !important;
+  }
+}
+
+.swipe-indicator {
+  position: absolute;
+  width: 100%;
+  height: 4px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  animation: swipeHint 2s infinite;
+}
+
+@keyframes swipeHint {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.tutorial-highlight {
+  position: relative;
+}
+
+.tutorial-highlight::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  right: -4px;
+  bottom: -4px;
+  border: 2px solid #2196f3;
+  border-radius: 8px;
+  animation: pulse 1.5s infinite;
+  pointer-events: none;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.tutorial-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1300;
+  pointer-events: none;
+}
+
+@media (max-width: 600px) {
+  .MuiPaper-root {
+    margin-bottom: env(safe-area-inset-bottom, 16px);
+  }
+  
+  .MuiIconButton-root {
+    padding: 8px !important;
+  }
+  
+  .MuiTypography-root {
+    word-break: break-word;
+  }
+}
+
+.tutorial-draggable {
+  touch-action: none !important;
+  user-select: none !important;
+  cursor: move;
+}
+
+.tutorial-draggable:active {
+  cursor: grabbing;
+}
+
+@media (hover: hover) {
+  .tutorial-draggable:hover {
+    cursor: grab;
+  }
+}

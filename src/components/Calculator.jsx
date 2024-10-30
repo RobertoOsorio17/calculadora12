@@ -24,6 +24,8 @@ import {
   Menu,
   MenuItem,
   ListItemIcon,
+  FormControlLabel,
+  Switch,
 } from '@mui/material';
 import { motion, AnimatePresence } from 'framer-motion';
 import HistoryIcon from '@mui/icons-material/History';
@@ -34,6 +36,8 @@ import Tutorial from './Tutorial';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import CloseIcon from '@mui/icons-material/Close';
+import FileDownloadIcon from '@mui/icons-material/FileDownload';
+import FileUploadIcon from '@mui/icons-material/FileUpload';
 
 const Calculator = () => {
   const [display, setDisplay] = useState('0');
@@ -57,6 +61,14 @@ const Calculator = () => {
   const [selectedOperations, setSelectedOperations] = useState([]);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [menuAnchorEl, setMenuAnchorEl] = useState(null);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [exportConfig, setExportConfig] = useState({
+    format: 'csv',
+    includeDate: true,
+    includeTime: true,
+    onlyResults: false
+  });
 
   useEffect(() => {
     if (!showTutorial) {
@@ -246,6 +258,285 @@ const Calculator = () => {
         </Button>
       </DialogActions>
     </Dialog>
+  );
+
+  const ExportModal = () => {
+    const handleExport = () => {
+      let content = '';
+      const date = new Date().toLocaleDateString();
+      const time = new Date().toLocaleTimeString();
+
+      if (exportConfig.format === 'csv') {
+        content = history
+          .filter(op => op && typeof op === 'string')
+          .map(op => {
+            let line = [];
+            if (exportConfig.includeDate) line.push(date);
+            if (exportConfig.includeTime) line.push(time);
+            
+            if (exportConfig.onlyResults) {
+              const parts = op.split('=');
+              if (parts.length > 1) {
+                line.push(parts[1].trim());
+              } else {
+                line.push(op);
+              }
+            } else {
+              line.push(op);
+            }
+            
+            return line.join(',');
+          })
+          .join('\n');
+
+        const blob = new Blob([content], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `calculadora_historial_${date}.csv`;
+        a.click();
+      } else {
+        content = {
+          date: date,
+          time: time,
+          operations: history
+            .filter(op => op && typeof op === 'string')
+            .map(op => ({
+              full: op,
+              result: op.includes('=') ? op.split('=')[1].trim() : op
+            }))
+        };
+
+        const blob = new Blob([JSON.stringify(content, null, 2)], { type: 'application/json' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `calculadora_historial_${date}.json`;
+        a.click();
+      }
+      setShowExportModal(false);
+    };
+
+    return (
+      <Dialog 
+        open={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            background: theme.palette.mode === 'light' 
+              ? 'linear-gradient(145deg, #ffffff, #f0f0f0)'
+              : 'linear-gradient(145deg, #2a2a2a, #1a1a1a)',
+          }
+        }}
+      >
+        <DialogTitle sx={{ borderBottom: `1px solid ${theme.palette.divider}` }}>
+          Exportar Historial
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          <Grid container spacing={3}>
+            <Grid item xs={12}>
+              <Typography variant="subtitle1" gutterBottom>
+                Formato de exportación
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                {['csv', 'json'].map((format) => (
+                  <Button
+                    key={format}
+                    variant={exportConfig.format === format ? "contained" : "outlined"}
+                    onClick={() => setExportConfig(prev => ({ ...prev, format }))}
+                    sx={{ flex: 1 }}
+                  >
+                    {format.toUpperCase()}
+                  </Button>
+                ))}
+              </Box>
+            </Grid>
+            <Grid item xs={12}>
+              <Typography variant="subtitle1" gutterBottom>
+                Opciones
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={exportConfig.includeDate}
+                      onChange={(e) => setExportConfig(prev => ({ ...prev, includeDate: e.target.checked }))}
+                    />
+                  }
+                  label="Incluir fecha"
+                />
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={exportConfig.includeTime}
+                      onChange={(e) => setExportConfig(prev => ({ ...prev, includeTime: e.target.checked }))}
+                    />
+                  }
+                  label="Incluir hora"
+                />
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={exportConfig.onlyResults}
+                      onChange={(e) => setExportConfig(prev => ({ ...prev, onlyResults: e.target.checked }))}
+                    />
+                  }
+                  label="Solo resultados"
+                />
+              </Box>
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, borderTop: `1px solid ${theme.palette.divider}` }}>
+          <Button onClick={() => setShowExportModal(false)}>
+            Cancelar
+          </Button>
+          <Button 
+            variant="contained" 
+            onClick={handleExport}
+            startIcon={<FileDownloadIcon />}
+          >
+            Exportar
+          </Button>
+        </DialogActions>
+      </Dialog>
+    );
+  };
+
+  const ImportModal = () => {
+    const fileInputRef = useRef(null);
+
+    const handleImport = (event) => {
+      const file = event.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            if (file.name.endsWith('.csv')) {
+              const content = e.target.result;
+              const operations = content.split('\n')
+                .filter(line => line.trim())
+                .map(line => line.split(',').pop());
+              setHistory(prev => [...operations, ...prev]);
+            } else if (file.name.endsWith('.json')) {
+              const content = JSON.parse(e.target.result);
+              const operations = content.operations.map(op => op.full);
+              setHistory(prev => [...operations, ...prev]);
+            }
+            setShowImportModal(false);
+          } catch (error) {
+            console.error('Error importing file:', error);
+          }
+        };
+        reader.readAsText(file);
+      }
+    };
+
+    return (
+      <Dialog
+        open={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            background: theme.palette.mode === 'light' 
+              ? 'linear-gradient(145deg, #ffffff, #f0f0f0)'
+              : 'linear-gradient(145deg, #2a2a2a, #1a1a1a)',
+          }
+        }}
+      >
+        <DialogTitle>Importar Historial</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 2 }}>
+            Selecciona un archivo CSV o JSON para importar
+          </DialogContentText>
+          <input
+            type="file"
+            accept=".csv,.json"
+            ref={fileInputRef}
+            style={{ display: 'none' }}
+            onChange={handleImport}
+          />
+          <Button
+            variant="contained"
+            onClick={() => fileInputRef.current.click()}
+            startIcon={<FileUploadIcon />}
+            fullWidth
+          >
+            Seleccionar Archivo
+          </Button>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowImportModal(false)}>
+            Cancelar
+          </Button>
+        </DialogActions>
+      </Dialog>
+    );
+  };
+
+  const HistoryActions = () => (
+    <Box sx={{ 
+      display: 'flex',
+      gap: 1,
+      p: 2,
+      borderBottom: `1px solid ${theme.palette.divider}`,
+      flexWrap: 'wrap',
+      justifyContent: 'center'
+    }}>
+      <Button
+        variant="contained"
+        startIcon={<FileUploadIcon />}
+        onClick={() => setShowImportModal(true)}
+        size="small"
+      >
+        Importar
+      </Button>
+      {history.length > 0 && (
+        <>
+          <Button
+            variant="contained"
+            startIcon={<FileDownloadIcon />}
+            onClick={() => setShowExportModal(true)}
+            size="small"
+          >
+            Exportar
+          </Button>
+          <Button
+            variant="outlined"
+            color="error"
+            startIcon={<DeleteIcon />}
+            onClick={() => setShowDeleteModal(true)}
+            size="small"
+          >
+            Vaciar
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={isEditMode ? (selectedOperations.length > 0 ? <DeleteIcon /> : <CloseIcon />) : <EditIcon />}
+            onClick={() => {
+              if (isEditMode && selectedOperations.length > 0) {
+                setHistory(prev => prev.filter((_, idx) => !selectedOperations.includes(idx)));
+                setSelectedOperations([]);
+                setIsEditMode(false);
+              } else {
+                setIsEditMode(!isEditMode);
+              }
+            }}
+            size="small"
+          >
+            {isEditMode 
+              ? selectedOperations.length > 0 
+                ? 'Eliminar' 
+                : 'Cancelar'
+              : 'Editar'}
+          </Button>
+        </>
+      )}
+    </Box>
   );
 
   return (
@@ -517,135 +808,92 @@ const Calculator = () => {
             }
           }}
         >
-          <Box sx={{ 
-            p: 3, 
-            height: '100%',
-            display: 'flex',
-            flexDirection: 'column'
-          }}>
-            <Box sx={{ 
-              display: 'flex', 
-              justifyContent: 'space-between', 
-              alignItems: 'center',
-              mb: 3,
-              borderBottom: `1px solid ${theme.palette.divider}`,
-              pb: 2
-            }}>
-              <Typography variant="h5" sx={{ fontWeight: 500 }}>
-                Historial
-              </Typography>
-              {history.length > 0 && (
-                <Box>
-                  <Button 
-                    color="error" 
-                    onClick={() => setShowDeleteModal(true)}
-                    size="small"
-                    startIcon={<DeleteIcon />}
-                    sx={{ mr: 1 }}
-                  >
-                    Vaciar
-                  </Button>
-                  <Button
-                    color="primary"
-                    onClick={() => {
-                      if (isEditMode && selectedOperations.length > 0) {
-                        setHistory(prev => prev.filter((_, idx) => !selectedOperations.includes(idx)));
-                        setSelectedOperations([]);
-                        setIsEditMode(false);
-                      } else {
-                        setIsEditMode(!isEditMode);
-                      }
-                    }}
-                    size="small"
-                    startIcon={isEditMode ? (selectedOperations.length > 0 ? <DeleteIcon /> : <CloseIcon />) : <EditIcon />}
-                  >
-                    {isEditMode 
-                      ? selectedOperations.length > 0 
-                        ? 'Eliminar' 
-                        : 'Cancelar'
-                      : 'Editar'}
-                  </Button>
-                </Box>
-              )}
-            </Box>
-
-            {history.length > 0 ? (
-              <List sx={{ 
-                flexGrow: 1,
-                overflow: 'auto',
-                '&::-webkit-scrollbar': {
-                  width: '8px',
-                },
-                '&::-webkit-scrollbar-track': {
-                  background: 'transparent',
-                },
-                '&::-webkit-scrollbar-thumb': {
-                  background: theme.palette.mode === 'light' ? '#bbb' : '#333',
-                  borderRadius: '4px',
-                },
-              }}>
-                {history.map((operation, index) => (
-                  <ListItem
-                    key={index}
-                    sx={{
-                      cursor: 'pointer',
-                      borderRadius: 2,
-                      mb: 1,
-                      background: theme.palette.background.paper,
-                      boxShadow: 1,
-                      transition: 'all 0.2s ease',
-                      '&:hover': {
-                        transform: 'translateX(-4px)',
-                        boxShadow: 3,
-                      },
-                    }}
-                  >
-                    {isEditMode && (
-                      <Checkbox
-                        checked={selectedOperations.includes(index)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedOperations(prev => [...prev, index]);
-                          } else {
-                            setSelectedOperations(prev => prev.filter(i => i !== index));
+          <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+            <Typography variant="h5" sx={{ p: 2, borderBottom: `1px solid ${theme.palette.divider}` }}>
+              Historial
+            </Typography>
+            
+            <HistoryActions />
+            
+            <Box sx={{ flexGrow: 1, overflow: 'auto', p: 2 }}>
+              {history.length > 0 ? (
+                <List sx={{ 
+                  flexGrow: 1,
+                  overflow: 'auto',
+                  '&::-webkit-scrollbar': {
+                    width: '8px',
+                  },
+                  '&::-webkit-scrollbar-track': {
+                    background: 'transparent',
+                  },
+                  '&::-webkit-scrollbar-thumb': {
+                    background: theme.palette.mode === 'light' ? '#bbb' : '#333',
+                    borderRadius: '4px',
+                  },
+                }}>
+                  {history.map((operation, index) => (
+                    <ListItem
+                      key={index}
+                      sx={{
+                        cursor: 'pointer',
+                        borderRadius: 2,
+                        mb: 1,
+                        background: theme.palette.background.paper,
+                        boxShadow: 1,
+                        transition: 'all 0.2s ease',
+                        '&:hover': {
+                          transform: 'translateX(-4px)',
+                          boxShadow: 3,
+                        },
+                      }}
+                    >
+                      {isEditMode && (
+                        <Checkbox
+                          checked={selectedOperations.includes(index)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedOperations(prev => [...prev, index]);
+                            } else {
+                              setSelectedOperations(prev => prev.filter(i => i !== index));
+                            }
+                          }}
+                        />
+                      )}
+                      <ListItemText 
+                        primary={operation}
+                        onClick={() => {
+                          if (!isEditMode) {
+                            const result = operation.split('=')[1].trim();
+                            setDisplay(result);
+                            setShowHistory(false);
+                          }
+                        }}
+                        sx={{
+                          '& .MuiListItemText-primary': {
+                            fontFamily: 'monospace',
+                            fontSize: '1.1rem',
                           }
                         }}
                       />
-                    )}
-                    <ListItemText 
-                      primary={operation}
-                      onClick={() => {
-                        if (!isEditMode) {
-                          const result = operation.split('=')[1].trim();
-                          setDisplay(result);
-                          setShowHistory(false);
-                        }
-                      }}
-                      sx={{
-                        '& .MuiListItemText-primary': {
-                          fontFamily: 'monospace',
-                          fontSize: '1.1rem',
-                        }
-                      }}
-                    />
-                  </ListItem>
-                ))}
-              </List>
-            ) : (
-              <Box sx={{
-                flexGrow: 1,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexDirection: 'column',
-                opacity: 0.5
-              }}>
-                <HistoryIcon sx={{ fontSize: 60, mb: 2 }} />
-                <Typography variant="h6">
-                  No hay operaciones
-                </Typography>
-              </Box>
-            )}
+                    </ListItem>
+                  ))}
+                </List>
+              ) : (
+                <Box sx={{
+                  flexGrow: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexDirection: 'column',
+                  opacity: 0.5
+                }}>
+                  <HistoryIcon sx={{ fontSize: 60, mb: 2 }} />
+                  <Typography variant="h6">
+                    No hay operaciones
+                  </Typography>
+                </Box>
+              )}
+            </Box>
           </Box>
         </Drawer>
       </Container>
@@ -657,6 +905,8 @@ const Calculator = () => {
       />
 
       <DeleteConfirmationModal />
+      <ExportModal />
+      <ImportModal />
     </>
   );
 };

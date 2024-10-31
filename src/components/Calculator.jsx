@@ -26,6 +26,7 @@ import {
   ListItemIcon,
   FormControlLabel,
   Switch,
+  Snackbar,
 } from '@mui/material';
 import { motion, AnimatePresence } from 'framer-motion';
 import HistoryIcon from '@mui/icons-material/History';
@@ -69,6 +70,7 @@ const Calculator = () => {
     includeTime: true,
     onlyResults: false
   });
+  const [showCopyToast, setShowCopyToast] = useState(false);
 
   useEffect(() => {
     if (!showTutorial) {
@@ -81,13 +83,19 @@ const Calculator = () => {
   }, [history]);
 
   const calculate = (a, b, op) => {
+    const numA = parseFloat(String(a).replace(',', '.'));
+    const numB = parseFloat(String(b).replace(',', '.'));
+    
+    let result;
     switch(op) {
-      case '+': return a + b;
-      case '-': return a - b;
-      case '×': return a * b;
-      case '÷': return a / b;
-      default: return b;
+      case '+': result = numA + numB; break;
+      case '-': result = numA - numB; break;
+      case '×': result = numA * numB; break;
+      case '÷': result = numA / numB; break;
+      default: result = numB;
     }
+    
+    return String(result).replace('.', ',');
   };
 
   const handleNumberClick = (number) => {
@@ -116,12 +124,12 @@ const Calculator = () => {
     handleTutorialAction({ type: 'operation-click', value: op });
 
     if (firstNumber === null) {
-      setFirstNumber(parseFloat(display));
+      setFirstNumber(parseFloat(display.replace(',', '.')));
     } else if (!newNumber) {
-      const current = parseFloat(display);
+      const current = parseFloat(display.replace(',', '.'));
       const result = calculate(firstNumber, current, operation);
-      setDisplay(String(result));
-      setFirstNumber(result);
+      setDisplay(String(result).replace('.', ','));
+      setFirstNumber(parseFloat(result.replace(',', '.')));
     }
     
     setOperation(op);
@@ -132,11 +140,11 @@ const Calculator = () => {
     handleTutorialAction({ type: 'equals' });
 
     if (operation && firstNumber !== null) {
-      const current = parseFloat(display);
+      const current = parseFloat(display.replace(',', '.'));
       const result = calculate(firstNumber, current, operation);
       const newOperation = `${firstNumber} ${operation} ${current} = ${result}`;
       setHistory(prev => [newOperation, ...prev].slice(0, 10));
-      setDisplay(String(result));
+      setDisplay(String(result).replace('.', ','));
       setFirstNumber(null);
       setOperation(null);
       setNewNumber(true);
@@ -160,7 +168,7 @@ const Calculator = () => {
   const ButtonWrapper = motion(Button);
 
   const handleAdvancedOperation = (op) => {
-    const current = parseFloat(display);
+    const current = parseFloat(display.replace(',', '.'));
     let result;
     
     switch(op) {
@@ -183,7 +191,7 @@ const Calculator = () => {
         return;
     }
     
-    setDisplay(String(result));
+    setDisplay(String(result).replace('.', ','));
     setHistory(prev => [`${op}(${current}) = ${result}`, ...prev].slice(0, 10));
   };
 
@@ -539,6 +547,25 @@ const Calculator = () => {
     </Box>
   );
 
+  const handleDecimalClick = () => {
+    if (newNumber) {
+      setDisplay('0,');
+      setNewNumber(false);
+    } else if (!display.includes(',')) {
+      setDisplay(prev => prev + ',');
+    }
+  };
+
+  const handleCopyToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(display);
+      setShowCopyToast(true);
+      setTimeout(() => setShowCopyToast(false), 2000);
+    } catch (err) {
+      console.error('Error al copiar:', err);
+    }
+  };
+
   return (
     <>
       <Container maxWidth="sm" sx={{ mt: 4 }} {...swipeHandlers} onTouchStart={handleTouchStart}>
@@ -606,6 +633,7 @@ const Calculator = () => {
             </Menu>
 
             <Box 
+              onClick={handleCopyToClipboard}
               sx={{
                 background: theme.palette.mode === 'light'
                   ? 'linear-gradient(145deg, #e6e6e6, #ffffff)'
@@ -618,36 +646,33 @@ const Calculator = () => {
                   : 'inset 5px 5px 10px #151515, inset -5px -5px 10px #252525',
                 minHeight: '80px',
                 display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'flex-end',
                 alignItems: 'flex-end',
+                justifyContent: 'flex-end',
+                cursor: 'pointer',
               }}
             >
               <Typography 
-                variant="body2" 
-                sx={{ 
-                  opacity: 0.7,
-                  height: '1.5em',
-                  color: theme.palette.text.primary,
-                }}
-              >
-                {operation && `${firstNumber} ${operation}`}
-              </Typography>
-              <Typography 
                 variant="h3" 
                 sx={{ 
-                  fontWeight: 'bold',
                   color: theme.palette.primary.main,
-                  wordBreak: 'break-all'
+                  wordBreak: 'break-all',
+                  textAlign: 'right',
+                  width: '100%'
                 }}
               >
                 {display}
               </Typography>
             </Box>
 
-            <Grid container spacing={1.5}>
-              {['7', '8', '9', '÷', '4', '5', '6', '×', '1', '2', '3', '-', 'C', '0', '=', '+'].map((btn) => (
-                <Grid item xs={3} key={btn}>
+            <Grid container spacing={1}>
+              {[
+                '7', '8', '9', '÷',
+                '4', '5', '6', '×',
+                '1', '2', '3', '-',
+                'C', '0', ',', '+',
+                '='
+              ].map((btn, index) => (
+                <Grid item xs={btn === '=' ? 12 : 3} key={btn}>
                   <ButtonWrapper
                     data-button={btn}
                     component={motion.button}
@@ -660,17 +685,14 @@ const Calculator = () => {
                       damping: 30
                     }}
                     fullWidth
-                    variant="contained"
                     sx={{
-                      height: 65,
-                      fontSize: '1.8rem',
+                      height: { xs: 55, sm: 50 },
+                      fontSize: { xs: '1.3rem', sm: '1.5rem' },
                       borderRadius: 2,
                       backgroundColor: isNaN(btn) 
                         ? (btn === '=' ? theme.palette.secondary.main : theme.palette.primary.main)
                         : theme.palette.mode === 'light' ? '#ffffff' : '#2a2a2a',
-                      color: isNaN(btn) 
-                        ? 'white' 
-                        : theme.palette.text.primary,
+                      color: isNaN(btn) ? 'white' : theme.palette.text.primary,
                       boxShadow: theme.palette.mode === 'light'
                         ? '5px 5px 10px #bebebe, -5px -5px 10px #ffffff'
                         : '5px 5px 10px #151515, -5px -5px 10px #252525',
@@ -679,13 +701,8 @@ const Calculator = () => {
                           ? (btn === '=' ? theme.palette.secondary.dark : theme.palette.primary.dark)
                           : theme.palette.mode === 'light' ? '#f5f5f5' : '#3a3a3a',
                       },
-                      touchAction: 'manipulation',
-                      '& .MuiTouchRipple-root': {
-                        opacity: 0.4,
-                      },
-                      '& .MuiTouchRipple-rippleVisible': {
-                        animationDuration: '300ms',
-                      },
+                      minWidth: { xs: '100%', sm: 'auto' },
+                      padding: { xs: '12px', sm: '8px' },
                     }}
                     onClick={() => {
                       switch(true) {
@@ -694,6 +711,9 @@ const Calculator = () => {
                           break;
                         case btn === '=':
                           handleEquals();
+                          break;
+                        case btn === ',':
+                          handleDecimalClick();
                           break;
                         case !isNaN(btn):
                           handleNumberClick(btn);
@@ -775,9 +795,9 @@ const Calculator = () => {
                             : '5px 5px 10px #151515, -5px -5px 10px #252525',
                         }}
                         onClick={() => {
-                          const current = parseFloat(display);
+                          const current = parseFloat(display.replace(',', '.'));
                           const result = action.operation(current);
-                          setDisplay(String(result));
+                          setDisplay(String(result).replace('.', ','));
                           setHistory(prev => [`${action.icon}(${current}) = ${result}`, ...prev].slice(0, 10));
                         }}
                       >
@@ -808,11 +828,36 @@ const Calculator = () => {
             }
           }}
         >
-          <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-            <Typography variant="h5" sx={{ p: 2, borderBottom: `1px solid ${theme.palette.divider}` }}>
-              Historial
-            </Typography>
-            
+          <Box sx={{ 
+            height: '100%', 
+            display: 'flex', 
+            flexDirection: 'column' 
+          }}>
+            <Box sx={{ 
+              p: 2, 
+              borderBottom: `1px solid ${theme.palette.divider}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <Typography variant="h5">
+                Historial
+              </Typography>
+              <IconButton 
+                onClick={() => {
+                  setShowHistory(false);
+                  setIsEditMode(false);
+                  setSelectedOperations([]);
+                }}
+                sx={{ 
+                  color: theme.palette.grey[500],
+                  display: { xs: 'flex', sm: 'none' }
+                }}
+              >
+                <CloseIcon />
+              </IconButton>
+            </Box>
+
             <HistoryActions />
             
             <Box sx={{ flexGrow: 1, overflow: 'auto', p: 2 }}>
@@ -907,6 +952,23 @@ const Calculator = () => {
       <DeleteConfirmationModal />
       <ExportModal />
       <ImportModal />
+
+      <Snackbar
+        open={showCopyToast}
+        autoHideDuration={2000}
+        onClose={() => setShowCopyToast(false)}
+        message="Número copiado al portapapeles"
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        sx={{
+          '& .MuiSnackbarContent-root': {
+            bgcolor: theme.palette.success.main,
+            color: 'white',
+            fontWeight: 'medium',
+            borderRadius: 2,
+            boxShadow: theme.shadows[3]
+          }
+        }}
+      />
     </>
   );
 };

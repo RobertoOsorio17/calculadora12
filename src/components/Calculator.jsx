@@ -33,14 +33,17 @@ import HistoryIcon from '@mui/icons-material/History';
 import FunctionsIcon from '@mui/icons-material/Functions';
 import { useSwipeable } from 'react-swipeable';
 import useKeyboardShortcuts from '../hooks/useKeyboardShortcuts';
-import Tutorial from './Tutorial';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import CloseIcon from '@mui/icons-material/Close';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import FileUploadIcon from '@mui/icons-material/FileUpload';
+import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
+import Converter from './Converter';
+import HistoryDrawer from './HistoryDrawer';
 
 const Calculator = () => {
+  const theme = useTheme();
   const [display, setDisplay] = useState('0');
   const [firstNumber, setFirstNumber] = useState(null);
   const [operation, setOperation] = useState(null);
@@ -50,33 +53,23 @@ const Calculator = () => {
     return savedHistory ? JSON.parse(savedHistory) : [];
   });
   const [showHistory, setShowHistory] = useState(false);
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const theme = useTheme();
-  const tutorialRef = useRef(null);
-  const [showTutorial, setShowTutorial] = useState(() => {
-    const hasSeenTutorial = localStorage.getItem('hasSeenTutorial');
-    return hasSeenTutorial !== 'true';
-  });
   const [isScientificMode, setIsScientificMode] = useState(false);
-  const [isEditMode, setIsEditMode] = useState(false);
-  const [selectedOperations, setSelectedOperations] = useState([]);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isConverterMode, setIsConverterMode] = useState(false);
   const [menuAnchorEl, setMenuAnchorEl] = useState(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showCopyToast, setShowCopyToast] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [selectedOperations, setSelectedOperations] = useState([]);
   const [exportConfig, setExportConfig] = useState({
     format: 'csv',
     includeDate: true,
     includeTime: true,
     onlyResults: false
   });
-  const [showCopyToast, setShowCopyToast] = useState(false);
-
-  useEffect(() => {
-    if (!showTutorial) {
-      localStorage.setItem('hasSeenTutorial', 'true');
-    }
-  }, [showTutorial]);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     localStorage.setItem('calculatorHistory', JSON.stringify(history));
@@ -99,13 +92,6 @@ const Calculator = () => {
   };
 
   const handleNumberClick = (number) => {
-    if (tutorialRef.current) {
-      tutorialRef.current.checkAction({ 
-        type: 'number-click', 
-        value: number.toString() 
-      });
-    }
-
     if (newNumber) {
       setDisplay(number);
       setNewNumber(false);
@@ -114,15 +100,7 @@ const Calculator = () => {
     }
   };
 
-  const handleTutorialAction = (action) => {
-    if (tutorialRef.current) {
-      tutorialRef.current.checkAction(action);
-    }
-  };
-
   const handleOperationClick = (op) => {
-    handleTutorialAction({ type: 'operation-click', value: op });
-
     if (firstNumber === null) {
       setFirstNumber(parseFloat(display.replace(',', '.')));
     } else if (!newNumber) {
@@ -137,8 +115,6 @@ const Calculator = () => {
   };
 
   const handleEquals = useCallback(() => {
-    handleTutorialAction({ type: 'equals' });
-
     if (operation && firstNumber !== null) {
       const current = parseFloat(display.replace(',', '.'));
       const result = calculate(firstNumber, current, operation);
@@ -197,11 +173,9 @@ const Calculator = () => {
 
   const swipeHandlers = useSwipeable({
     onSwipedLeft: () => {
-      handleTutorialAction({ type: 'swipe-left' });
       setDisplay(prev => prev.length > 1 ? prev.slice(0, -1) : '0');
     },
     onSwipedRight: () => {
-      handleTutorialAction({ type: 'swipe-right' });
       setShowHistory(true);
     },
     onSwipedDown: () => handleClear(),
@@ -242,10 +216,28 @@ const Calculator = () => {
     }},
   ];
 
+  const onDeleteOperation = (indices) => {
+    if (indices === 'all') {
+      setShowDeleteModal(true);
+    } else {
+      const newHistory = history.filter((_, index) => !indices.includes(index));
+      setHistory(newHistory);
+      localStorage.setItem('calculatorHistory', JSON.stringify(newHistory));
+    }
+  };
+
   const DeleteConfirmationModal = () => (
     <Dialog
       open={showDeleteModal}
       onClose={() => setShowDeleteModal(false)}
+      PaperProps={{
+        sx: {
+          borderRadius: 2,
+          background: theme.palette.mode === 'light' 
+            ? 'linear-gradient(145deg, #ffffff, #f0f0f0)'
+            : 'linear-gradient(145deg, #2a2a2a, #1a1a1a)',
+        }
+      }}
     >
       <DialogTitle>Confirmar borrado</DialogTitle>
       <DialogContent>
@@ -254,13 +246,16 @@ const Calculator = () => {
         </DialogContentText>
       </DialogContent>
       <DialogActions>
-        <Button onClick={() => setShowDeleteModal(false)}>Cancelar</Button>
+        <Button onClick={() => setShowDeleteModal(false)}>
+          Cancelar
+        </Button>
         <Button 
           onClick={() => {
             setHistory([]);
             setShowDeleteModal(false);
-          }} 
+          }}
           color="error"
+          variant="contained"
         >
           Borrar
         </Button>
@@ -418,28 +413,43 @@ const Calculator = () => {
     const fileInputRef = useRef(null);
 
     const handleImport = (event) => {
-      const file = event.target.files[0];
-      if (file) {
+      try {
+        const file = event.target.files[0];
+        if (!file) {
+          handleError('No se seleccionó ningún archivo');
+          return;
+        }
+
+        if (!file.name.endsWith('.csv') && !file.name.endsWith('.json')) {
+          handleError('Formato de archivo no válido');
+          return;
+        }
+
         const reader = new FileReader();
         reader.onload = (e) => {
           try {
+            let operations = [];
             if (file.name.endsWith('.csv')) {
               const content = e.target.result;
-              const operations = content.split('\n')
+              operations = content.split('\n')
                 .filter(line => line.trim())
-                .map(line => line.split(',').pop());
-              setHistory(prev => [...operations, ...prev]);
+                .map(line => line.split(',')[0]);
             } else if (file.name.endsWith('.json')) {
               const content = JSON.parse(e.target.result);
-              const operations = content.operations.map(op => op.full);
-              setHistory(prev => [...operations, ...prev]);
+              operations = Array.isArray(content) 
+                ? content.map(op => typeof op === 'string' ? op : op.operation)
+                : content.operations.map(op => typeof op === 'string' ? op : op.operation);
             }
+            setHistory(prev => [...operations, ...prev]);
             setShowImportModal(false);
           } catch (error) {
             console.error('Error importing file:', error);
           }
         };
         reader.readAsText(file);
+      } catch (err) {
+        handleError('Error al importar el archivo');
+        console.error('Error al importar:', err);
       }
     };
 
@@ -526,12 +536,14 @@ const Calculator = () => {
             variant="outlined"
             startIcon={isEditMode ? (selectedOperations.length > 0 ? <DeleteIcon /> : <CloseIcon />) : <EditIcon />}
             onClick={() => {
-              if (isEditMode && selectedOperations.length > 0) {
-                setHistory(prev => prev.filter((_, idx) => !selectedOperations.includes(idx)));
-                setSelectedOperations([]);
+              if (isEditMode) {
+                if (selectedOperations.length > 0) {
+                  onDeleteOperation(selectedOperations);
+                  setSelectedOperations([]);
+                }
                 setIsEditMode(false);
               } else {
-                setIsEditMode(!isEditMode);
+                setIsEditMode(true);
               }
             }}
             size="small"
@@ -562,8 +574,31 @@ const Calculator = () => {
       setShowCopyToast(true);
       setTimeout(() => setShowCopyToast(false), 2000);
     } catch (err) {
+      handleError('Error al copiar al portapapeles');
       console.error('Error al copiar:', err);
     }
+  };
+
+  const handleToggleFavorite = (index) => {
+    const newHistory = [...history];
+    newHistory[index].isFavorite = !newHistory[index].isFavorite;
+    setHistory(newHistory);
+    localStorage.setItem('calculatorHistory', JSON.stringify(newHistory));
+  };
+
+  const handleCopyResult = (operation) => {
+    const result = operation.split('=')[1].trim();
+    navigator.clipboard.writeText(result);
+    setShowCopyToast(true);
+  };
+
+  const handleImportData = (importedData) => {
+    setHistory(prev => [...importedData, ...prev]);
+  };
+
+  const handleError = (message) => {
+    setError(message);
+    setTimeout(() => setError(null), 3000);
   };
 
   return (
@@ -620,6 +655,7 @@ const Calculator = () => {
               <MenuItem 
                 onClick={() => {
                   setIsScientificMode(!isScientificMode);
+                  setIsConverterMode(false);
                   setMenuAnchorEl(null);
                 }}
               >
@@ -628,6 +664,20 @@ const Calculator = () => {
                 </ListItemIcon>
                 <ListItemText>
                   {isScientificMode ? "Desactivar Modo Científico" : "Activar Modo Científico"}
+                </ListItemText>
+              </MenuItem>
+              <MenuItem 
+                onClick={() => {
+                  setIsConverterMode(!isConverterMode);
+                  setIsScientificMode(false);
+                  setMenuAnchorEl(null);
+                }}
+              >
+                <ListItemIcon>
+                  <SwapHorizIcon color={isConverterMode ? "secondary" : "inherit"} />
+                </ListItemIcon>
+                <ListItemText>
+                  {isConverterMode ? "Desactivar Convertidor" : "Activar Convertidor"}
                 </ListItemText>
               </MenuItem>
             </Menu>
@@ -811,143 +861,50 @@ const Calculator = () => {
           </Paper>
         </AnimatePresence>
 
-        <Drawer
-          anchor="right"
+        <HistoryDrawer 
           open={showHistory}
           onClose={() => {
             setShowHistory(false);
             setIsEditMode(false);
             setSelectedOperations([]);
           }}
-          PaperProps={{
-            sx: {
-              width: { xs: '100%', sm: 400 },
-              background: theme.palette.mode === 'light' 
-                ? 'linear-gradient(145deg, #ffffff, #f0f0f0)'
-                : 'linear-gradient(145deg, #2a2a2a, #1a1a1a)',
-            }
+          history={history}
+          onSelectOperation={(op) => {
+            const result = op.operation.split('=')[1].trim();
+            setDisplay(result);
+            setShowHistory(false);
           }}
-        >
-          <Box sx={{ 
-            height: '100%', 
-            display: 'flex', 
-            flexDirection: 'column' 
-          }}>
-            <Box sx={{ 
-              p: 2, 
-              borderBottom: `1px solid ${theme.palette.divider}`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between'
-            }}>
-              <Typography variant="h5">
-                Historial
-              </Typography>
-              <IconButton 
-                onClick={() => {
-                  setShowHistory(false);
-                  setIsEditMode(false);
-                  setSelectedOperations([]);
-                }}
-                sx={{ 
-                  color: theme.palette.grey[500],
-                  display: { xs: 'flex', sm: 'none' }
-                }}
-              >
-                <CloseIcon />
-              </IconButton>
-            </Box>
-
-            <HistoryActions />
-            
-            <Box sx={{ flexGrow: 1, overflow: 'auto', p: 2 }}>
-              {history.length > 0 ? (
-                <List sx={{ 
-                  flexGrow: 1,
-                  overflow: 'auto',
-                  '&::-webkit-scrollbar': {
-                    width: '8px',
-                  },
-                  '&::-webkit-scrollbar-track': {
-                    background: 'transparent',
-                  },
-                  '&::-webkit-scrollbar-thumb': {
-                    background: theme.palette.mode === 'light' ? '#bbb' : '#333',
-                    borderRadius: '4px',
-                  },
-                }}>
-                  {history.map((operation, index) => (
-                    <ListItem
-                      key={index}
-                      sx={{
-                        cursor: 'pointer',
-                        borderRadius: 2,
-                        mb: 1,
-                        background: theme.palette.background.paper,
-                        boxShadow: 1,
-                        transition: 'all 0.2s ease',
-                        '&:hover': {
-                          transform: 'translateX(-4px)',
-                          boxShadow: 3,
-                        },
-                      }}
-                    >
-                      {isEditMode && (
-                        <Checkbox
-                          checked={selectedOperations.includes(index)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedOperations(prev => [...prev, index]);
-                            } else {
-                              setSelectedOperations(prev => prev.filter(i => i !== index));
-                            }
-                          }}
-                        />
-                      )}
-                      <ListItemText 
-                        primary={operation}
-                        onClick={() => {
-                          if (!isEditMode) {
-                            const result = operation.split('=')[1].trim();
-                            setDisplay(result);
-                            setShowHistory(false);
-                          }
-                        }}
-                        sx={{
-                          '& .MuiListItemText-primary': {
-                            fontFamily: 'monospace',
-                            fontSize: '1.1rem',
-                          }
-                        }}
-                      />
-                    </ListItem>
-                  ))}
-                </List>
-              ) : (
-                <Box sx={{
-                  flexGrow: 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexDirection: 'column',
-                  opacity: 0.5
-                }}>
-                  <HistoryIcon sx={{ fontSize: 60, mb: 2 }} />
-                  <Typography variant="h6">
-                    No hay operaciones
-                  </Typography>
-                </Box>
-              )}
-            </Box>
-          </Box>
-        </Drawer>
+          onDeleteOperation={onDeleteOperation}
+          onToggleFavorite={(index) => {
+            setHistory(prev => prev.map((item, i) => {
+              if (i === index) {
+                const historyItem = typeof item === 'string' 
+                  ? { operation: item, isFavorite: false } 
+                  : { ...item };
+                return {
+                  ...historyItem,
+                  isFavorite: !historyItem.isFavorite
+                };
+              }
+              return item;
+            }));
+          }}
+          onCopyResult={(op) => {
+            const result = op.operation.split('=')[1].trim();
+            navigator.clipboard.writeText(result);
+          }}
+          onImportData={(data) => {
+            const formattedData = data.map(item => 
+              typeof item === 'string' ? item : item.operation
+            );
+            setHistory(prev => [...formattedData, ...prev]);
+          }}
+          isEditMode={isEditMode}
+          setIsEditMode={setIsEditMode}
+          selectedOperations={selectedOperations}
+          setSelectedOperations={setSelectedOperations}
+        />
       </Container>
-
-      <Tutorial 
-        ref={tutorialRef}
-        onComplete={() => setShowTutorial(false)}
-        onSkip={() => setShowTutorial(false)}
-      />
 
       <DeleteConfirmationModal />
       <ExportModal />
@@ -969,6 +926,37 @@ const Calculator = () => {
           }
         }}
       />
+
+      <Snackbar
+        open={!!error}
+        autoHideDuration={3000}
+        onClose={() => setError(null)}
+        message={error}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        sx={{
+          '& .MuiSnackbarContent-root': {
+            bgcolor: theme.palette.error.main,
+            color: 'white',
+            fontWeight: 'medium',
+            borderRadius: 2,
+            boxShadow: theme.shadows[3]
+          }
+        }}
+      />
+
+      <AnimatePresence>
+        {isConverterMode && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.3 }}
+            style={{ marginTop: '1rem' }}
+          >
+            <Converter />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 };

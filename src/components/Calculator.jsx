@@ -620,9 +620,36 @@ const Calculator = () => {
     setTimeout(() => setError(null), 3000);
   };
 
+  const handleDeleteOperation = (indices) => {
+    if (indices === 'all') {
+      setHistory([]);
+      localStorage.removeItem('calculatorHistory');
+      return;
+    }
+
+    const newHistory = history.filter((_, index) => !indices.includes(index));
+    setHistory(newHistory);
+    localStorage.setItem('calculatorHistory', JSON.stringify(newHistory));
+  };
+
+  const handleClearHistory = () => {
+    setHistory([]);
+    localStorage.removeItem('calculatorHistory');
+    setShowHistory(false);
+  };
+
   return (
     <>
-      <Container maxWidth="sm" sx={{ mt: 4 }} {...swipeHandlers} onTouchStart={handleTouchStart}>
+      <Container 
+        maxWidth="sm" 
+        sx={{ 
+          position: 'relative',
+          pt: 1,
+          pb: 2
+        }}
+        {...swipeHandlers}
+        onTouchStart={handleTouchStart}
+      >
         <AnimatePresence mode="wait">
           <Paper
             component={motion.div}
@@ -885,6 +912,26 @@ const Calculator = () => {
           </Paper>
         </AnimatePresence>
 
+        <IconButton
+          onClick={() => setShowHistory(true)}
+          sx={{
+            position: 'absolute',
+            top: 8,
+            right: 8,
+            backgroundColor: theme.palette.background.paper,
+            boxShadow: theme.shadows[2],
+            '&:hover': {
+              backgroundColor: theme.palette.action.hover
+            },
+            zIndex: 1,
+            width: 40,
+            height: 40,
+            borderRadius: '50%'
+          }}
+        >
+          <HistoryIcon fontSize="small" />
+        </IconButton>
+
         <HistoryDrawer 
           open={showHistory}
           onClose={() => {
@@ -894,35 +941,11 @@ const Calculator = () => {
           }}
           history={history}
           onSelectOperation={(op) => {
-            const result = op.operation.split('=')[1].trim();
-            setDisplay(result);
+            setDisplay(op);
             setShowHistory(false);
           }}
-          onDeleteOperation={onDeleteOperation}
-          onToggleFavorite={(index) => {
-            setHistory(prev => prev.map((item, i) => {
-              if (i === index) {
-                const historyItem = typeof item === 'string' 
-                  ? { operation: item, isFavorite: false } 
-                  : { ...item };
-                return {
-                  ...historyItem,
-                  isFavorite: !historyItem.isFavorite
-                };
-              }
-              return item;
-            }));
-          }}
-          onCopyResult={(op) => {
-            const result = op.operation.split('=')[1].trim();
-            navigator.clipboard.writeText(result);
-          }}
-          onImportData={(data) => {
-            const formattedData = data.map(item => 
-              typeof item === 'string' ? item : item.operation
-            );
-            setHistory(prev => [...formattedData, ...prev]);
-          }}
+          onDeleteOperation={handleDeleteOperation}
+          onClearHistory={handleClearHistory}
           isEditMode={isEditMode}
           setIsEditMode={setIsEditMode}
           selectedOperations={selectedOperations}

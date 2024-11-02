@@ -363,7 +363,13 @@ const HistoryDrawer = ({
                       </Tooltip>
                       {!isEditMode && (
                         <Tooltip title="Eliminar">
-                          <IconButton size="small" onClick={() => onDeleteOperation(index)}>
+                          <IconButton 
+                            size="small" 
+                            onClick={(e) => {
+                              e.stopPropagation(); // Prevenir la propagación del evento
+                              onDeleteOperation([index]); // Pasar el índice como array
+                            }}
+                          >
                             <DeleteIcon />
                           </IconButton>
                         </Tooltip>

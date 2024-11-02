@@ -11,8 +11,14 @@ const solveEquation = (equation) => {
         'Para encontrar valores específicos, necesitas un sistema de dos ecuaciones.\n' +
         'Ejemplo: 2x+3y=5; 4x-y=1'
       );
+    } else if (equation.includes('x³') || equation.includes('x^3')) {
+      return solveCubic(equation);
     } else if (equation.includes('x²') || equation.includes('x^2')) {
       return solveQuadratic(equation);
+    } else if (equation.includes('|x|') || equation.includes('abs(x)')) {
+      return solveAbsolute(equation);
+    } else if (equation.includes('√') || equation.includes('sqrt')) {
+      return solveSquareRoot(equation);
     } else if (equation.includes('x')) {
       return solveLinear(equation);
     }
@@ -213,6 +219,160 @@ const solveQuadratic = (equation) => {
     }
   } catch (error) {
     throw new Error(`Error en ecuación cuadrática: ${error.message}`);
+  }
+};
+
+// Función para resolver ecuaciones con valor absoluto
+const solveAbsolute = (equation) => {
+  // Normalizar la ecuación
+  equation = equation.replace(/\|/g, 'abs').replace(/abs\(x\)/g, '|x|');
+  const sides = equation.split('=');
+  if (sides.length !== 2) throw new Error('La ecuación debe tener un signo =');
+  
+  // Resolver las dos posibilidades: x y -x
+  const positive = equation.replace(/\|x\|/g, 'x');
+  const negative = equation.replace(/\|x\|/g, '(-x)');
+  
+  const solutions = [
+    ...solveLinear(positive),
+    ...solveLinear(negative)
+  ];
+  
+  return solutions.filter((sol, index, self) => 
+    index === self.findIndex(s => Math.abs(s.x - sol.x) < 1e-10)
+  );
+};
+
+// Función para resolver ecuaciones con raíz cuadrada
+const solveSquareRoot = (equation) => {
+  equation = equation.replace(/√/g, 'sqrt');
+  const sides = equation.split('=');
+  if (sides.length !== 2) throw new Error('La ecuación debe tener un signo =');
+  
+  // Elevar al cuadrado ambos lados
+  const squared = `${sides[0]}^2=${sides[1]}^2`;
+  const solutions = solveQuadratic(squared);
+  
+  // Verificar soluciones (pueden aparecer soluciones falsas al elevar al cuadrado)
+  return solutions.filter(sol => {
+    const original = equation
+      .replace(/x/g, `(${sol.x})`)
+      .replace(/sqrt/g, 'Math.sqrt');
+    try {
+      return Math.abs(eval(sides[0]) - eval(sides[1])) < 1e-10;
+    } catch {
+      return false;
+    }
+  });
+};
+
+// Función para resolver ecuaciones cúbicas
+const solveCubic = (equation) => {
+  try {
+    equation = equation.replace(/x\^3/g, 'x³');
+    const sides = equation.split('=');
+    if (sides.length !== 2) throw new Error('La ecuación debe tener un signo =');
+    
+    let a = 0, b = 0, c = 0, d = 0;
+    const terms = (sides[0] + '-' + sides[1]).match(/[+-]?\d*x³|[+-]?\d*x²|[+-]?\d*x|[+-]?\d+/g);
+    
+    terms.forEach(term => {
+      if (term.includes('x³')) {
+        a += term === 'x³' ? 1 : term === '-x³' ? -1 : parseFloat(term.replace('x³', ''));
+      } else if (term.includes('x²')) {
+        b += term === 'x²' ? 1 : term === '-x²' ? -1 : parseFloat(term.replace('x²', ''));
+      } else if (term.includes('x')) {
+        c += term === 'x' ? 1 : term === '-x' ? -1 : parseFloat(term.replace('x', ''));
+      } else {
+        d += parseFloat(term);
+      }
+    });
+
+    if (Math.abs(a) < 1e-10) throw new Error('No es una ecuación cúbica válida (coeficiente de x³ es 0)');
+
+    // Método de Cardano
+    const p = (3 * a * c - b * b) / (3 * a * a);
+    const q = (2 * b * b * b - 9 * a * b * c + 27 * a * a * d) / (27 * a * a * a);
+    const D = (q * q / 4) + (p * p * p / 27);
+
+    const steps = [
+      'Ecuación cúbica:',
+      `${a}x³ + ${b}x² + ${c}x + ${d} = 0`,
+      'Aplicando método de Cardano:',
+      `p = ${roundToDecimals(p, 4)}`,
+      `q = ${roundToDecimals(q, 4)}`,
+      `Discriminante = ${roundToDecimals(D, 4)}`
+    ];
+
+    let solutions = [];
+    
+    if (Math.abs(D) < 1e-10) {
+      // Una raíz real triple o una real simple y una doble
+      if (Math.abs(p) < 1e-10) {
+        // Raíz triple
+        const x = -b / (3 * a);
+        solutions = [
+          { x: roundToDecimals(x, 4), type: 'real', multiplicity: 3 }
+        ];
+        steps.push('Caso: Raíz triple real', `x = ${roundToDecimals(x, 4)}`);
+      } else {
+        // Una raíz simple y una doble
+        const x1 = (3 * q) / (2 * p);
+        const x2 = -x1 / 2;
+        solutions = [
+          { x: roundToDecimals(x1, 4), type: 'real', multiplicity: 1 },
+          { x: roundToDecimals(x2, 4), type: 'real', multiplicity: 2 }
+        ];
+        steps.push(
+          'Caso: Una raíz simple y una doble',
+          `x₁ = ${roundToDecimals(x1, 4)} (multiplicidad 1)`,
+          `x₂ = ${roundToDecimals(x2, 4)} (multiplicidad 2)`
+        );
+      }
+    } else if (D > 0) {
+      // Una raíz real y dos complejas conjugadas
+      const u = Math.cbrt(-q/2 + Math.sqrt(D));
+      const v = Math.cbrt(-q/2 - Math.sqrt(D));
+      const x1 = u + v - b/(3*a);
+      const realPart = -(u + v)/2 - b/(3*a);
+      const imagPart = (Math.sqrt(3)/2) * (u - v);
+      
+      solutions = [
+        { x: roundToDecimals(x1, 4), type: 'real' },
+        { x: `${roundToDecimals(realPart, 4)} + ${roundToDecimals(imagPart, 4)}i`, type: 'complex' },
+        { x: `${roundToDecimals(realPart, 4)} - ${roundToDecimals(imagPart, 4)}i`, type: 'complex' }
+      ];
+      steps.push(
+        'Caso: Una raíz real y dos complejas conjugadas',
+        `x₁ = ${roundToDecimals(x1, 4)}`,
+        `x₂ = ${solutions[1].x}`,
+        `x₃ = ${solutions[2].x}`
+      );
+    } else {
+      // Tres raíces reales distintas
+      const phi = Math.acos(-q/(2*Math.sqrt(-Math.pow(p/3, 3))));
+      const r = 2 * Math.sqrt(-p/3);
+      const x1 = r * Math.cos(phi/3) - b/(3*a);
+      const x2 = r * Math.cos((phi + 2*Math.PI)/3) - b/(3*a);
+      const x3 = r * Math.cos((phi + 4*Math.PI)/3) - b/(3*a);
+      
+      solutions = [
+        { x: roundToDecimals(x1, 4), type: 'real' },
+        { x: roundToDecimals(x2, 4), type: 'real' },
+        { x: roundToDecimals(x3, 4), type: 'real' }
+      ];
+      steps.push(
+        'Caso: Tres raíces reales distintas',
+        `x₁ = ${roundToDecimals(x1, 4)}`,
+        `x₂ = ${roundToDecimals(x2, 4)}`,
+        `x₃ = ${roundToDecimals(x3, 4)}`
+      );
+    }
+
+    solutions.forEach(sol => sol.steps = steps);
+    return solutions;
+  } catch (error) {
+    throw new Error(`Error en ecuación cúbica: ${error.message}`);
   }
 };
 

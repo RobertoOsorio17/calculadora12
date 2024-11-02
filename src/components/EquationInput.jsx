@@ -43,13 +43,17 @@ const EquationInput = ({ open, onClose, onResult }) => {
     }
     
     return solutions.map((sol, index) => {
-      if (sol.type === 'complex') {
-        return `x${index + 1} = ${sol.x}`;
+      let result = '';
+      if (sol.multiplicity) {
+        result = `x${index + 1} = ${sol.x} (multiplicidad: ${sol.multiplicity})`;
+      } else if (sol.type === 'complex') {
+        result = `x${index + 1} = ${sol.x}`;
       } else if (sol.y !== undefined) {
-        return `x = ${sol.x}\ny = ${sol.y}`;
+        result = `x = ${sol.x}\ny = ${sol.y}`;
       } else {
-        return `x${solutions.length > 1 ? index + 1 : ''} = ${sol.x}`;
+        result = `x${solutions.length > 1 ? index + 1 : ''} = ${sol.x}`;
       }
+      return result;
     }).join('\n');
   };
 
@@ -68,7 +72,11 @@ const EquationInput = ({ open, onClose, onResult }) => {
           <TextField
             fullWidth
             label="Ingrese la ecuación"
-            placeholder="Ejemplos: x² + 2x + 1 = 0 | 2x + 3y = 7; 4x - y = 1"
+            placeholder="Ecuación lineal: 2x + 1 = 0
+Ecuación cuadrática: x² + 2x + 1 = 0
+Sistema de ecuaciones: 2x + 3y = 5; 4x - y = 1"
+            multiline
+            rows={3}
             value={equation}
             onChange={(e) => setEquation(e.target.value)}
             error={!!error}
@@ -120,7 +128,10 @@ const EquationInput = ({ open, onClose, onResult }) => {
             <ul>
               <li>Lineales: ax + b = c</li>
               <li>Cuadráticas: ax² + bx + c = 0</li>
-              <li>Sistemas de ecuaciones lineales: 2x + 3y = 7; 4x - y = 1</li>
+              <li>Cúbicas: ax³ + bx² + cx + d = 0</li>
+              <li>Valor absoluto: |x| + b = c</li>
+              <li>Raíz cuadrada: √(ax + b) = c</li>
+              <li>Sistemas lineales: 2x + 3y = 7; 4x - y = 1</li>
             </ul>
           </Box>
         </Box>

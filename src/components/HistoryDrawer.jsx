@@ -229,6 +229,51 @@ const HistoryDrawer = ({
     URL.revokeObjectURL(url);
   };
 
+  const getOperationTypeChip = (type) => {
+    const chipStyles = {
+      fontSize: '0.7rem',
+      height: 20,
+      marginLeft: 1
+    };
+
+    switch (type) {
+      case 'scientific':
+        return (
+          <Chip 
+            label="Científica" 
+            size="small" 
+            color="primary" 
+            sx={{ ...chipStyles, bgcolor: theme.palette.info.main }} 
+          />
+        );
+      case 'advanced':
+        return (
+          <Chip 
+            label="Avanzada" 
+            size="small" 
+            color="secondary" 
+            sx={{ ...chipStyles, bgcolor: theme.palette.success.main }} 
+          />
+        );
+      case 'equation':
+        return (
+          <Chip 
+            label="Ecuación" 
+            size="small" 
+            sx={{ ...chipStyles, bgcolor: theme.palette.warning.main }} 
+          />
+        );
+      default:
+        return (
+          <Chip 
+            label="Básica" 
+            size="small" 
+            sx={{ ...chipStyles, bgcolor: theme.palette.grey[500] }} 
+          />
+        );
+    }
+  };
+
   return (
     <Drawer
       anchor="right"
@@ -335,15 +380,11 @@ const HistoryDrawer = ({
                     <Box sx={{ flex: 1, minWidth: 0 }}>
                       <ListItemText 
                         primary={
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                            <Typography variant="body1" component="span" noWrap>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Typography variant="body1">
                               {op.operation}
                             </Typography>
-                            <Chip 
-                              size="small"
-                              label={op.type}
-                              color={op.type === 'scientific' ? 'secondary' : 'primary'}
-                            />
+                            {getOperationTypeChip(op.type)}
                           </Box>
                         }
                         secondary={new Date(op.date).toLocaleString()}

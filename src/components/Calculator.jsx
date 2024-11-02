@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { 
   Box, 
   Container, 
@@ -21,12 +21,13 @@ import {
   DialogContentText,
   DialogActions,
   Checkbox,
-  Menu,
   MenuItem,
   ListItemIcon,
   FormControlLabel,
   Switch,
   Snackbar,
+  TextField,
+  Menu as MuiMenu,
 } from '@mui/material';
 import { motion, AnimatePresence } from 'framer-motion';
 import HistoryIcon from '@mui/icons-material/History';
@@ -49,11 +50,8 @@ const Calculator = () => {
   const [display, setDisplay] = useState('0');
   const [firstNumber, setFirstNumber] = useState(null);
   const [operation, setOperation] = useState(null);
-  const [newNumber, setNewNumber] = useState(false);
-  const [history, setHistory] = useState(() => {
-    const savedHistory = localStorage.getItem('calculatorHistory');
-    return savedHistory ? JSON.parse(savedHistory) : [];
-  });
+  const [newNumber, setNewNumber] = useState(true);
+  const [history, setHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
   const [isScientificMode, setIsScientificMode] = useState(false);
   const [isConverterMode, setIsConverterMode] = useState(false);
@@ -74,62 +72,69 @@ const Calculator = () => {
   const [error, setError] = useState(null);
   const [isEquationMode, setIsEquationMode] = useState(false);
   const [equationModalOpen, setEquationModalOpen] = useState(false);
+  const [memory, setMemory] = useState(null);
+  const [lastOperation, setLastOperation] = useState(null);
+  const [equation, setEquation] = useState('');
 
-  useEffect(() => {
-    localStorage.setItem('calculatorHistory', JSON.stringify(history));
-  }, [history]);
-
-  const calculate = (a, b, op) => {
-    const numA = parseFloat(String(a).replace(',', '.'));
-    const numB = parseFloat(String(b).replace(',', '.'));
+  const calculateResult = useCallback((operation, value1, value2) => {
+    const num1 = parseFloat(value1.replace(',', '.'));
+    const num2 = parseFloat(value2.replace(',', '.'));
     
-    let result;
-    switch(op) {
-      case '+': result = numA + numB; break;
-      case '-': result = numA - numB; break;
-      case '×': result = numA * numB; break;
-      case '÷': result = numA / numB; break;
-      default: result = numB;
+    switch (operation) {
+      case '+': return (num1 + num2).toString().replace('.', ',');
+      case '-': return (num1 - num2).toString().replace('.', ',');
+      case '×': return (num1 * num2).toString().replace('.', ',');
+      case '÷': return num2 !== 0 ? (num1 / num2).toString().replace('.', ',') : 'Error';
+      default: return value2;
     }
-    
-    return String(result).replace('.', ',');
-  };
+  }, []);
 
-  const handleNumberClick = (number) => {
+  const addToHistory = useCallback((operation, type = 'basic') => {
+    setHistory(prev => [{
+      operation,
+      type,
+      isFavorite: false,
+      timestamp: new Date().toISOString()
+    }, ...prev]);
+  }, []);
+
+  const handleNumberClick = useCallback((number) => {
     if (newNumber) {
       setDisplay(number);
       setNewNumber(false);
     } else {
       setDisplay(prev => prev === '0' ? number : prev + number);
     }
-  };
+  }, [newNumber]);
 
-  const handleOperationClick = (op) => {
-    if (firstNumber === null) {
-      setFirstNumber(parseFloat(display.replace(',', '.')));
-    } else if (!newNumber) {
-      const current = parseFloat(display.replace(',', '.'));
-      const result = calculate(firstNumber, current, operation);
-      setDisplay(String(result).replace('.', ','));
-      setFirstNumber(parseFloat(result.replace(',', '.')));
+  const handleOperationClick = useCallback((op) => {
+    if (newNumber) {
+      if (firstNumber === null) {
+        setFirstNumber(display);
+      }
+    } else {
+      if (firstNumber !== null) {
+        const result = calculateResult(operation, firstNumber, display);
+        setDisplay(result);
+        setFirstNumber(result);
+      } else {
+        setFirstNumber(display);
+      }
     }
-    
     setOperation(op);
     setNewNumber(true);
-  };
+  }, [display, firstNumber, operation, newNumber, calculateResult]);
 
   const handleEquals = useCallback(() => {
-    if (operation && firstNumber !== null) {
-      const current = parseFloat(display.replace(',', '.'));
-      const result = calculate(firstNumber, current, operation);
-      const newOperation = `${firstNumber} ${operation} ${current} = ${result}`;
-      setHistory(prev => [newOperation, ...prev].slice(0, 10));
-      setDisplay(String(result).replace('.', ','));
-      setFirstNumber(null);
+    if (firstNumber !== null && operation !== null && !newNumber) {
+      const result = calculateResult(operation, firstNumber, display);
+      setDisplay(result);
+      addToHistory(`${firstNumber} ${operation} ${display} = ${result}`);
+      setFirstNumber(result);
       setOperation(null);
       setNewNumber(true);
     }
-  }, [display, firstNumber, operation]);
+  }, [firstNumber, operation, display, newNumber, addToHistory]);
 
   const handleClear = () => {
     setDisplay('0');
@@ -172,7 +177,7 @@ const Calculator = () => {
     }
     
     setDisplay(String(result).replace('.', ','));
-    setHistory(prev => [`${op}(${current}) = ${result}`, ...prev].slice(0, 10));
+    addToHistory(`${op}(${current}) = ${result}`);
   };
 
   const swipeHandlers = useSwipeable({
@@ -221,16 +226,9 @@ const Calculator = () => {
     { 
       icon: '∑', 
       name: 'Resolver Ecuación',
-      operation: (input) => {
-        try {
-          const solutions = solveEquation(input);
-          return solutions.map((sol, index) => 
-            `x${index + 1} = ${sol.x}${sol.type === 'complex' ? '' : '\n'}`
-          ).join('');
-        } catch (error) {
-          handleError(error.message);
-          return input;
-        }
+      operation: () => {
+        setEquationModalOpen(true);
+        setMenuAnchorEl(null);
       }
     },
   ];
@@ -515,68 +513,63 @@ const Calculator = () => {
     );
   };
 
-  const HistoryActions = () => (
-    <Box sx={{ 
-      display: 'flex',
-      gap: 1,
-      p: 2,
-      borderBottom: `1px solid ${theme.palette.divider}`,
-      flexWrap: 'wrap',
-      justifyContent: 'center'
-    }}>
-      <Button
-        variant="contained"
-        startIcon={<FileUploadIcon />}
-        onClick={() => setShowImportModal(true)}
-        size="small"
-      >
-        Importar
-      </Button>
-      {history.length > 0 && (
-        <>
-          <Button
-            variant="contained"
-            startIcon={<FileDownloadIcon />}
-            onClick={() => setShowExportModal(true)}
-            size="small"
-          >
-            Exportar
-          </Button>
-          <Button
-            variant="outlined"
-            color="error"
-            startIcon={<DeleteIcon />}
-            onClick={() => setShowDeleteModal(true)}
-            size="small"
-          >
-            Vaciar
-          </Button>
-          <Button
-            variant="outlined"
-            startIcon={isEditMode ? (selectedOperations.length > 0 ? <DeleteIcon /> : <CloseIcon />) : <EditIcon />}
-            onClick={() => {
-              if (isEditMode) {
-                if (selectedOperations.length > 0) {
-                  onDeleteOperation(selectedOperations);
-                  setSelectedOperations([]);
+  const HistoryActions = useMemo(() => {
+    return (
+      <Box sx={{ display: 'flex', gap: 1, p: 2 }}>
+        <Button
+          variant="contained"
+          startIcon={<FileUploadIcon />}
+          onClick={() => setShowImportModal(true)}
+          size="small"
+        >
+          Importar
+        </Button>
+        {history.length > 0 && (
+          <>
+            <Button
+              variant="contained"
+              startIcon={<FileDownloadIcon />}
+              onClick={() => setShowExportModal(true)}
+              size="small"
+            >
+              Exportar
+            </Button>
+            <Button
+              variant="outlined"
+              color="error"
+              startIcon={<DeleteIcon />}
+              onClick={() => setShowDeleteModal(true)}
+              size="small"
+            >
+              Vaciar
+            </Button>
+            <Button
+              variant="outlined"
+              startIcon={isEditMode ? (selectedOperations.length > 0 ? <DeleteIcon /> : <CloseIcon />) : <EditIcon />}
+              onClick={() => {
+                if (isEditMode) {
+                  if (selectedOperations.length > 0) {
+                    onDeleteOperation(selectedOperations);
+                    setSelectedOperations([]);
+                  }
+                  setIsEditMode(false);
+                } else {
+                  setIsEditMode(true);
                 }
-                setIsEditMode(false);
-              } else {
-                setIsEditMode(true);
-              }
-            }}
-            size="small"
-          >
-            {isEditMode 
-              ? selectedOperations.length > 0 
-                ? 'Eliminar' 
-                : 'Cancelar'
-              : 'Editar'}
-          </Button>
-        </>
-      )}
-    </Box>
-  );
+              }}
+              size="small"
+            >
+              {isEditMode 
+                ? selectedOperations.length > 0 
+                  ? 'Eliminar' 
+                  : 'Cancelar'
+                : 'Editar'}
+            </Button>
+          </>
+        )}
+      </Box>
+    );
+  }, [history.length, isEditMode, selectedOperations]);
 
   const handleDecimalClick = () => {
     if (newNumber) {
@@ -598,12 +591,26 @@ const Calculator = () => {
     }
   };
 
-  const handleToggleFavorite = (index) => {
-    const newHistory = [...history];
-    newHistory[index].isFavorite = !newHistory[index].isFavorite;
-    setHistory(newHistory);
-    localStorage.setItem('calculatorHistory', JSON.stringify(newHistory));
-  };
+  const handleToggleFavorite = useCallback((index) => {
+    setHistory(prevHistory => {
+      const newHistory = [...prevHistory];
+      const operation = newHistory[index];
+      
+      if (typeof operation === 'string') {
+        newHistory[index] = {
+          operation,
+          isFavorite: true,
+          timestamp: new Date().toISOString()
+        };
+      } else {
+        newHistory[index] = {
+          ...operation,
+          isFavorite: !operation.isFavorite
+        };
+      }
+      return newHistory;
+    });
+  }, []);
 
   const handleCopyResult = (operation) => {
     const result = operation.split('=')[1].trim();
@@ -615,10 +622,10 @@ const Calculator = () => {
     setHistory(prev => [...importedData, ...prev]);
   };
 
-  const handleError = (message) => {
-    setError(message);
-    setTimeout(() => setError(null), 3000);
-  };
+  const handleError = useCallback((message) => {
+    setError(message.replace(/\n/g, '<br>'));
+    setTimeout(() => setError(null), 5000);
+  }, []);
 
   const handleDeleteOperation = (indices) => {
     if (indices === 'all') {
@@ -637,6 +644,111 @@ const Calculator = () => {
     localStorage.removeItem('calculatorHistory');
     setShowHistory(false);
   };
+
+  useEffect(() => {
+    const savedHistory = localStorage.getItem('calculatorHistory');
+    if (savedHistory) {
+      try {
+        setHistory(JSON.parse(savedHistory));
+      } catch (error) {
+        console.error('Error loading history:', error);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (history.length > 0) {
+      localStorage.setItem('calculatorHistory', JSON.stringify(history));
+    }
+  }, [history]);
+
+  const memoizedConverter = useMemo(() => <Converter />, []);
+
+  const handleScientificOperation = useCallback((operation) => {
+    try {
+      const current = parseFloat(display.replace(',', '.'));
+      let result;
+
+      if (typeof operation === 'function') {
+        result = operation(current);
+        
+        if (typeof result === 'string') {
+          setDisplay(result);
+          addToHistory(`Ecuación: ${result}`, 'scientific');
+          return;
+        }
+      } else {
+        result = operation;
+      }
+
+      const formattedResult = Number.isFinite(result) 
+        ? result.toString().replace('.', ',')
+        : 'Error';
+
+      setDisplay(formattedResult);
+      setFirstNumber(null);
+      setOperation(null);
+      setNewNumber(true);
+      setMemory(formattedResult);
+
+      const operationName = scientificActions.find(action => action.operation === operation)?.icon || 'función';
+      addToHistory(`${operationName}(${display}) = ${formattedResult}`, 'scientific');
+    } catch (error) {
+      handleError('Error en la operación científica');
+      console.error('Error científico:', error);
+    }
+  }, [display, scientificActions, addToHistory]);
+
+  const equationButtons = [
+    { icon: 'x', operation: 'x' },
+    { icon: 'y', operation: 'y' },
+    { icon: '=', operation: '=' },
+    { icon: '²', operation: '²' },
+    { icon: '³', operation: '³' },
+    { icon: '√', operation: '√' },
+  ];
+
+  const handleEquationInput = useCallback((char) => {
+    setEquation(prev => prev + char);
+  }, []);
+
+  const renderMenu = () => (
+    <MuiMenu
+      anchorEl={menuAnchorEl}
+      open={Boolean(menuAnchorEl)}
+      onClose={() => setMenuAnchorEl(null)}
+    >
+      <MenuItem onClick={() => {
+        setIsScientificMode(prev => !prev);
+        setMenuAnchorEl(null);
+      }}>
+        <ListItemIcon>
+          <FunctionsIcon fontSize="small" />
+        </ListItemIcon>
+        <ListItemText>Modo Científico</ListItemText>
+      </MenuItem>
+
+      <MenuItem onClick={() => {
+        setIsConverterMode(prev => !prev);
+        setMenuAnchorEl(null);
+      }}>
+        <ListItemIcon>
+          <SwapHorizIcon fontSize="small" />
+        </ListItemIcon>
+        <ListItemText>Convertidor</ListItemText>
+      </MenuItem>
+
+      <MenuItem onClick={() => {
+        setEquationModalOpen(true);
+        setMenuAnchorEl(null);
+      }}>
+        <ListItemIcon>
+          <FunctionsIcon fontSize="small" />
+        </ListItemIcon>
+        <ListItemText>Resolver Ecuación</ListItemText>
+      </MenuItem>
+    </MuiMenu>
+  );
 
   return (
     <>
@@ -681,57 +793,7 @@ const Calculator = () => {
               <FunctionsIcon />
             </IconButton>
 
-            <Menu
-              anchorEl={menuAnchorEl}
-              open={Boolean(menuAnchorEl)}
-              onClose={() => setMenuAnchorEl(null)}
-            >
-              <MenuItem 
-                onClick={() => {
-                  setIsScientificMode(!isScientificMode);
-                  setIsConverterMode(false);
-                  setIsEquationMode(false);
-                  setMenuAnchorEl(null);
-                }}
-              >
-                <ListItemIcon>
-                  <FunctionsIcon color={isScientificMode ? "secondary" : "inherit"} />
-                </ListItemIcon>
-                <ListItemText>
-                  {isScientificMode ? "Desactivar Modo Científico" : "Activar Modo Científico"}
-                </ListItemText>
-              </MenuItem>
-              
-              <MenuItem 
-                onClick={() => {
-                  setIsConverterMode(!isConverterMode);
-                  setIsScientificMode(false);
-                  setIsEquationMode(false);
-                  setMenuAnchorEl(null);
-                }}
-              >
-                <ListItemIcon>
-                  <SwapHorizIcon color={isConverterMode ? "secondary" : "inherit"} />
-                </ListItemIcon>
-                <ListItemText>
-                  {isConverterMode ? "Desactivar Convertidor" : "Activar Convertidor"}
-                </ListItemText>
-              </MenuItem>
-
-              <MenuItem 
-                onClick={() => {
-                  setEquationModalOpen(true);
-                  setMenuAnchorEl(null);
-                }}
-              >
-                <ListItemIcon>
-                  <FunctionsIcon />
-                </ListItemIcon>
-                <ListItemText>
-                  Resolver Ecuación
-                </ListItemText>
-              </MenuItem>
-            </Menu>
+            {renderMenu()}
 
             <Box 
               onClick={handleCopyToClipboard}
@@ -872,8 +934,9 @@ const Calculator = () => {
                   sx={{ mt: 1 }}
                 >
                   {scientificActions.map((action) => (
-                    <Grid item xs={3} key={action.icon}>
+                    <Grid item xs={4} key={action.icon}>
                       <ButtonWrapper
+                        key={action.icon}
                         component={motion.button}
                         whileHover={{ scale: 1.05 }}
                         whileTap={{ scale: 0.95 }}
@@ -884,22 +947,21 @@ const Calculator = () => {
                           damping: 30
                         }}
                         fullWidth
-                        variant="contained"
+                        onClick={() => handleScientificOperation(action.operation)}
                         sx={{
-                          height: 65,
-                          fontSize: '1.2rem',
+                          height: { xs: 55, sm: 50 },
+                          fontSize: { xs: '1.1rem', sm: '1.2rem' },
                           borderRadius: 2,
                           backgroundColor: theme.palette.secondary.main,
                           color: 'white',
                           boxShadow: theme.palette.mode === 'light'
                             ? '5px 5px 10px #bebebe, -5px -5px 10px #ffffff'
                             : '5px 5px 10px #151515, -5px -5px 10px #252525',
-                        }}
-                        onClick={() => {
-                          const current = parseFloat(display.replace(',', '.'));
-                          const result = action.operation(current);
-                          setDisplay(String(result).replace('.', ','));
-                          setHistory(prev => [`${action.icon}(${current}) = ${result}`, ...prev].slice(0, 10));
+                          '&:hover': {
+                            backgroundColor: theme.palette.secondary.dark,
+                          },
+                          minWidth: { xs: '100%', sm: 'auto' },
+                          padding: { xs: '12px', sm: '8px' },
                         }}
                       >
                         {action.icon}
@@ -945,11 +1007,9 @@ const Calculator = () => {
             setShowHistory(false);
           }}
           onDeleteOperation={handleDeleteOperation}
-          onClearHistory={handleClearHistory}
-          isEditMode={isEditMode}
-          setIsEditMode={setIsEditMode}
-          selectedOperations={selectedOperations}
-          setSelectedOperations={setSelectedOperations}
+          onToggleFavorite={handleToggleFavorite}
+          onCopyResult={handleCopyResult}
+          onImportData={handleImportData}
         />
       </Container>
 
@@ -976,9 +1036,8 @@ const Calculator = () => {
 
       <Snackbar
         open={!!error}
-        autoHideDuration={3000}
+        autoHideDuration={5000}
         onClose={() => setError(null)}
-        message={error}
         anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
         sx={{
           '& .MuiSnackbarContent-root': {
@@ -986,10 +1045,14 @@ const Calculator = () => {
             color: 'white',
             fontWeight: 'medium',
             borderRadius: 2,
-            boxShadow: theme.shadows[3]
+            boxShadow: theme.shadows[3],
+            maxWidth: '80vw',
+            whiteSpace: 'pre-line'
           }
         }}
-      />
+      >
+        <div dangerouslySetInnerHTML={{ __html: error }} />
+      </Snackbar>
 
       <AnimatePresence>
         {isConverterMode && (
@@ -1007,14 +1070,21 @@ const Calculator = () => {
 
       <EquationInput 
         open={equationModalOpen}
-        onClose={() => setEquationModalOpen(false)}
+        onClose={() => {
+          setEquationModalOpen(false);
+          setEquation('');
+        }}
+        equation={equation}
+        setEquation={setEquation}
+        equationButtons={equationButtons}
         onResult={(result) => {
           setDisplay(result);
-          setHistory(prev => [`Ecuación: ${result}`, ...prev]);
+          addToHistory(`Ecuación: ${result}`);
+          setEquation('');
         }}
       />
     </>
   );
 };
 
-export default Calculator;
+export default React.memo(Calculator);

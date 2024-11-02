@@ -1,14 +1,20 @@
 const solveEquation = (equation) => {
   try {
+    equation = validateEquation(equation);
     equation = equation.replace(/\s+/g, '').toLowerCase();
+    
+    // Normalizar notación
+    equation = equation
+      .replace(/\^2/g, '²')
+      .replace(/\^3/g, '³')
+      .replace(/sqrt/g, '√');
     
     if (equation.includes('y')) {
       if (equation.includes(';')) {
         return solveSystemOfEquations(equation);
       }
       throw new Error(
-        'Una ecuación con dos variables (x,y) tiene infinitas soluciones.\n' +
-        'Para encontrar valores específicos, necesitas un sistema de dos ecuaciones.\n' +
+        'Una ecuación con dos variables (x,y) necesita un sistema de ecuaciones.\n' +
         'Ejemplo: 2x+3y=5; 4x-y=1'
       );
     } else if (equation.includes('x³') || equation.includes('x^3')) {
@@ -128,23 +134,29 @@ const solveLinear = (equation) => {
     let left = sides[0];
     let right = sides[1];
     
+    // Mover todos los términos al lado izquierdo
+    let normalizedEquation = `${left}-${right}`;
+    
     // Coeficientes
     let a = 0; // coeficiente de x
     let b = 0; // término independiente
     
-    // Procesamos términos con x
-    let terms = (left + '-' + right).match(/[+-]?\d*x|[+-]?\d+/g);
+    // Procesamos términos
+    let terms = normalizedEquation.match(/[+-]?\d*x|[+-]?\d+/g);
     if (!terms) throw new Error('Formato de ecuación inválido');
     
     terms.forEach(term => {
       if (term.includes('x')) {
-        a += term === 'x' ? 1 : term === '-x' ? -1 : parseFloat(term.replace('x', ''));
+        // Manejar casos como +x, -x, x
+        if (term === 'x') a += 1;
+        else if (term === '-x') a -= 1;
+        else a += parseFloat(term.replace('x', ''));
       } else {
         b += parseFloat(term);
       }
     });
     
-    if (a === 0) throw new Error('No es una ecuación lineal válida (coeficiente de x es 0)');
+    if (Math.abs(a) < 1e-10) throw new Error('No es una ecuación lineal válida (coeficiente de x es 0)');
     
     const x = -b / a;
     return [{
@@ -153,6 +165,7 @@ const solveLinear = (equation) => {
       steps: [
         'Ecuación lineal:',
         `${a}x + ${b} = 0`,
+        `${a}x = ${-b}`,
         `x = ${roundToDecimals(x, 4)}`
       ]
     }];
@@ -374,6 +387,25 @@ const solveCubic = (equation) => {
   } catch (error) {
     throw new Error(`Error en ecuación cúbica: ${error.message}`);
   }
+};
+
+const validateEquation = (equation) => {
+  if (!equation || typeof equation !== 'string') {
+    throw new Error('La ecuación debe ser una cadena de texto válida');
+  }
+  
+  equation = equation.trim();
+  if (!equation.includes('=')) {
+    throw new Error('La ecuación debe contener un signo =');
+  }
+  
+  // Expresión regular corregida
+  const validChars = /^[-+0-9x-z*/()=;,.\s√|²³^]+$/;
+  if (!validChars.test(equation)) {
+    throw new Error('La ecuación contiene caracteres no válidos');
+  }
+  
+  return equation;
 };
 
 export default solveEquation; 

@@ -41,6 +41,8 @@ import FileUploadIcon from '@mui/icons-material/FileUpload';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import Converter from './Converter';
 import HistoryDrawer from './HistoryDrawer';
+import solveEquation from '../utils/equationSolver';
+import EquationInput from './EquationInput';
 
 const Calculator = () => {
   const theme = useTheme();
@@ -70,6 +72,8 @@ const Calculator = () => {
     onlyResults: false
   });
   const [error, setError] = useState(null);
+  const [isEquationMode, setIsEquationMode] = useState(false);
+  const [equationModalOpen, setEquationModalOpen] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('calculatorHistory', JSON.stringify(history));
@@ -214,6 +218,21 @@ const Calculator = () => {
       for (let i = 1; i <= n; i++) result *= i;
       return result;
     }},
+    { 
+      icon: '∑', 
+      name: 'Resolver Ecuación',
+      operation: (input) => {
+        try {
+          const solutions = solveEquation(input);
+          return solutions.map((sol, index) => 
+            `x${index + 1} = ${sol.x}${sol.type === 'complex' ? '' : '\n'}`
+          ).join('');
+        } catch (error) {
+          handleError(error.message);
+          return input;
+        }
+      }
+    },
   ];
 
   const onDeleteOperation = (indices) => {
@@ -625,26 +644,14 @@ const Calculator = () => {
           >
             <IconButton
               onClick={(e) => setMenuAnchorEl(e.currentTarget)}
-              sx={{ 
+              sx={{
                 position: 'absolute',
-                left: 8,
-                top: 8,
-                color: isScientificMode ? theme.palette.secondary.main : theme.palette.text.secondary
+                top: 16,
+                left: 16,
+                color: theme.palette.text.primary,
               }}
             >
               <FunctionsIcon />
-            </IconButton>
-
-            <IconButton 
-              onClick={() => setShowHistory(true)}
-              sx={{ 
-                position: 'absolute',
-                right: 8,
-                top: 8,
-                color: theme.palette.primary.main
-              }}
-            >
-              <HistoryIcon />
             </IconButton>
 
             <Menu
@@ -656,6 +663,7 @@ const Calculator = () => {
                 onClick={() => {
                   setIsScientificMode(!isScientificMode);
                   setIsConverterMode(false);
+                  setIsEquationMode(false);
                   setMenuAnchorEl(null);
                 }}
               >
@@ -666,10 +674,12 @@ const Calculator = () => {
                   {isScientificMode ? "Desactivar Modo Científico" : "Activar Modo Científico"}
                 </ListItemText>
               </MenuItem>
+              
               <MenuItem 
                 onClick={() => {
                   setIsConverterMode(!isConverterMode);
                   setIsScientificMode(false);
+                  setIsEquationMode(false);
                   setMenuAnchorEl(null);
                 }}
               >
@@ -678,6 +688,20 @@ const Calculator = () => {
                 </ListItemIcon>
                 <ListItemText>
                   {isConverterMode ? "Desactivar Convertidor" : "Activar Convertidor"}
+                </ListItemText>
+              </MenuItem>
+
+              <MenuItem 
+                onClick={() => {
+                  setEquationModalOpen(true);
+                  setMenuAnchorEl(null);
+                }}
+              >
+                <ListItemIcon>
+                  <FunctionsIcon />
+                </ListItemIcon>
+                <ListItemText>
+                  Resolver Ecuación
                 </ListItemText>
               </MenuItem>
             </Menu>
@@ -957,6 +981,15 @@ const Calculator = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <EquationInput 
+        open={equationModalOpen}
+        onClose={() => setEquationModalOpen(false)}
+        onResult={(result) => {
+          setDisplay(result);
+          setHistory(prev => [`Ecuación: ${result}`, ...prev]);
+        }}
+      />
     </>
   );
 };

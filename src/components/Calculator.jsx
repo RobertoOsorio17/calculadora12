@@ -89,13 +89,14 @@ const Calculator = () => {
     }
   }, []);
 
-  const addToHistory = useCallback((operation, type = 'basic') => {
-    setHistory(prev => [{
+  const addToHistory = useCallback((operation) => {
+    const newOperation = {
       operation,
-      type,
+      timestamp: new Date(),
       isFavorite: false,
-      timestamp: new Date().toISOString()
-    }, ...prev]);
+      type: getOperationType(operation)
+    };
+    setHistory(prev => [newOperation, ...prev]);
   }, []);
 
   const handleNumberClick = useCallback((number) => {
@@ -592,31 +593,22 @@ const Calculator = () => {
   };
 
   const handleToggleFavorite = useCallback((index) => {
-    setHistory(prevHistory => {
-      const newHistory = [...prevHistory];
-      const operation = newHistory[index];
-      
-      if (typeof operation === 'string') {
-        newHistory[index] = {
-          operation,
-          isFavorite: true,
-          timestamp: new Date().toISOString()
-        };
-      } else {
-        newHistory[index] = {
-          ...operation,
-          isFavorite: !operation.isFavorite
-        };
+    setHistory(prev => prev.map((op, i) => {
+      if (i === index) {
+        const updatedOp = typeof op === 'string' 
+          ? { operation: op, isFavorite: true, timestamp: new Date() }
+          : { ...op, isFavorite: !op.isFavorite };
+        return updatedOp;
       }
-      return newHistory;
-    });
+      return op;
+    }));
   }, []);
 
-  const handleCopyResult = (operation) => {
-    const result = operation.split('=')[1].trim();
+  const handleCopyResult = useCallback((operation) => {
+    const result = operation.operation.split('=')[1]?.trim() || operation.operation;
     navigator.clipboard.writeText(result);
     setShowCopyToast(true);
-  };
+  }, []);
 
   const handleImportData = (importedData) => {
     setHistory(prev => [...importedData, ...prev]);
@@ -749,6 +741,49 @@ const Calculator = () => {
       </MenuItem>
     </MuiMenu>
   );
+
+  const getOperationType = (operation) => {
+    if (typeof operation === 'string') {
+      if (operation.includes('sin(') || operation.includes('cos(') || operation.includes('tan(')) {
+        return 'scientific';
+      } else if (operation.includes('Ecuación:')) {
+        return 'equation';
+      } else if (operation.includes('=')) {
+        return 'graph';
+      }
+    }
+    return 'basic';
+  };
+
+  const categorizedHistory = useMemo(() => {
+    return history.map(op => ({
+      operation: typeof op === 'string' ? op : op.operation,
+      type: getOperationType(op),
+      date: op.timestamp || new Date(),
+      isFavorite: op.isFavorite || false,
+      isGraph: getOperationType(op) === 'graph'
+    }));
+  }, [history]);
+
+  const handleHistoryOpen = useCallback(() => {
+    setShowHistory(true);
+  }, []);
+
+  const handleHistoryClose = useCallback(() => {
+    setShowHistory(false);
+    setIsEditMode(false);
+    setSelectedOperations([]);
+  }, []);
+
+  const handleSelectOperation = useCallback((operation, action) => {
+    if (action === 'favorite') {
+      // No cerrar el drawer si es una acción de favorito
+      return;
+    }
+    const result = operation.operation.split('=')[1]?.trim() || operation.operation;
+    setDisplay(result);
+    handleHistoryClose();
+  }, []);
 
   return (
     <>
@@ -975,7 +1010,7 @@ const Calculator = () => {
         </AnimatePresence>
 
         <IconButton
-          onClick={() => setShowHistory(true)}
+          onClick={handleHistoryOpen}
           sx={{
             position: 'absolute',
             top: 8,
@@ -985,32 +1020,24 @@ const Calculator = () => {
             '&:hover': {
               backgroundColor: theme.palette.action.hover
             },
-            zIndex: 1,
-            width: 40,
-            height: 40,
-            borderRadius: '50%'
+            zIndex: 1
           }}
         >
           <HistoryIcon fontSize="small" />
         </IconButton>
 
-        <HistoryDrawer 
-          open={showHistory}
-          onClose={() => {
-            setShowHistory(false);
-            setIsEditMode(false);
-            setSelectedOperations([]);
-          }}
-          history={history}
-          onSelectOperation={(op) => {
-            setDisplay(op);
-            setShowHistory(false);
-          }}
-          onDeleteOperation={handleDeleteOperation}
-          onToggleFavorite={handleToggleFavorite}
-          onCopyResult={handleCopyResult}
-          onImportData={handleImportData}
-        />
+        {showHistory && (
+          <HistoryDrawer 
+            open={showHistory}
+            onClose={handleHistoryClose}
+            history={categorizedHistory}
+            onSelectOperation={handleSelectOperation}
+            onDeleteOperation={handleDeleteOperation}
+            onToggleFavorite={handleToggleFavorite}
+            onCopyResult={handleCopyResult}
+            onImportData={handleImportData}
+          />
+        )}
       </Container>
 
       <DeleteConfirmationModal />

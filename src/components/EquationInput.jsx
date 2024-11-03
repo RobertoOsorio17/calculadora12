@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Dialog,
   DialogTitle,
@@ -17,6 +17,7 @@ import {
 import CloseIcon from '@mui/icons-material/Close';
 import FunctionsIcon from '@mui/icons-material/Functions';
 import solveEquation from '../utils/equationSolver';
+import EquationGraph from './EquationGraph';
 
 const EquationInput = ({ 
   open, 
@@ -28,18 +29,50 @@ const EquationInput = ({
 }) => {
   const [error, setError] = useState('');
   const [solution, setSolution] = useState(null);
+  const [showGraph, setShowGraph] = useState(false);
+  const [inputValue, setInputValue] = useState('');
   const theme = useTheme();
+  const debounceRef = useRef(null);
 
-  const handleSolve = () => {
-    try {
-      const solutions = solveEquation(equation);
-      setSolution(solutions);
-      onResult(formatSolutionForDisplay(solutions));
-      setError('');
-    } catch (error) {
-      setError(error.message);
-      setSolution(null);
+  useEffect(() => {
+    if (open) {
+      setInputValue(equation);
     }
+  }, [open, equation]);
+
+  useEffect(() => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+
+    if (!inputValue.trim()) {
+      setSolution(null);
+      setError('');
+      return;
+    }
+
+    debounceRef.current = setTimeout(() => {
+      try {
+        const solutions = solveEquation(inputValue);
+        setSolution(solutions);
+        setEquation(inputValue);
+        onResult(formatSolutionForDisplay(solutions));
+        setError('');
+      } catch (error) {
+        setError(error.message);
+      }
+    }, 800);
+
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+    };
+  }, [inputValue, onResult, setEquation]);
+
+  const handleInputChange = (e) => {
+    const newValue = e.target.value;
+    setInputValue(newValue);
   };
 
   const formatSolutionForDisplay = (solutions) => {
@@ -65,10 +98,11 @@ const EquationInput = ({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle>
-        Resolver Ecuación
+        Resolver ecuación
         <IconButton
+          aria-label="close"
           onClick={onClose}
           sx={{ position: 'absolute', right: 8, top: 8 }}
         >
@@ -78,17 +112,11 @@ const EquationInput = ({
       <DialogContent>
         <TextField
           fullWidth
-          value={equation}
-          onChange={(e) => setEquation(e.target.value)}
+          value={inputValue}
+          onChange={handleInputChange}
           error={!!error}
           helperText={error}
-          placeholder="Ejemplos:
-2x + 3 = 15
-3x² + 2x - 5 = 0
-2x³ - 3x² + x - 6 = 0
-|x| + 2 = 5
-√(2x + 1) = 3
-2x + 3y = 7; 4x - y = 1"
+          placeholder="Ejemplos: 2x+3y=7; 4x-y=1"
           multiline
           rows={3}
           sx={{ 
@@ -121,40 +149,61 @@ const EquationInput = ({
         </Grid>
 
         {solution && (
-          <Paper 
-            elevation={3} 
-            sx={{ 
-              p: 2, 
-              mt: 2, 
-              bgcolor: theme.palette.background.default 
-            }}
-          >
-            <Typography variant="h6" gutterBottom>
-              Solución:
-            </Typography>
-            {solution[0].steps ? (
-              solution[0].steps.map((step, index) => (
-                <Typography 
-                  key={index} 
-                  variant="body1" 
-                  sx={{ 
-                    my: 1,
-                    fontFamily: 'monospace',
-                    color: index === 0 ? theme.palette.primary.main : 'inherit'
-                  }}
-                >
-                  {step}
-                </Typography>
-              ))
-            ) : (
-              <Typography 
-                variant="body1" 
-                sx={{ fontFamily: 'monospace' }}
-              >
-                {formatSolutionForDisplay(solution)}
+          <>
+            <Paper 
+              elevation={2} 
+              sx={{ 
+                p: 2, 
+                mt: 2, 
+                bgcolor: theme.palette.background.default,
+                position: 'relative'
+              }}
+            >
+              <Typography variant="h6" gutterBottom>
+                Solución:
               </Typography>
+              {solution[0].steps ? (
+                solution[0].steps.map((step, index) => (
+                  <Typography 
+                    key={index} 
+                    variant="body1" 
+                    sx={{ 
+                      my: 1,
+                      fontFamily: 'monospace',
+                      color: index === 0 ? theme.palette.primary.main : 'inherit'
+                    }}
+                  >
+                    {step}
+                  </Typography>
+                ))
+              ) : (
+                <Typography 
+                  variant="body1" 
+                  sx={{ fontFamily: 'monospace' }}
+                >
+                  {formatSolutionForDisplay(solution)}
+                </Typography>
+              )}
+            </Paper>
+
+            <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
+              <Button
+                variant="outlined"
+                startIcon={<FunctionsIcon />}
+                onClick={() => setShowGraph(!showGraph)}
+                sx={{ my: 1 }}
+              >
+                {showGraph ? 'Ocultar gráfico' : 'Mostrar gráfico'}
+              </Button>
+            </Box>
+
+            {showGraph && (
+              <EquationGraph 
+                equation={inputValue}
+                solutions={solution}
+              />
             )}
-          </Paper>
+          </>
         )}
         
         <Box sx={{ mt: 3 }}>
@@ -173,13 +222,6 @@ const EquationInput = ({
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cerrar</Button>
-        <Button 
-          variant="contained" 
-          onClick={handleSolve}
-          disabled={!equation.trim()}
-        >
-          Resolver
-        </Button>
       </DialogActions>
     </Dialog>
   );

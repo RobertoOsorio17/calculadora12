@@ -58,7 +58,10 @@ import {
   Sort as SortIcon,
   Check as CheckIcon,
   ArrowUpward as ArrowUpwardIcon,
-  ArrowDownward as ArrowDownwardIcon
+  ArrowDownward as ArrowDownwardIcon,
+  Calculate as CalculatorIcon,
+  Timeline as TimelineIcon,
+  Assignment as AssignmentIcon
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -96,7 +99,16 @@ const HistoryDrawer = memo(({
   const [anchorEl, setAnchorEl] = useState(null);
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
 
-  // Función para determinar el color según el tipo de operación
+  // Primero definimos las opciones de tabs (después de los estados)
+  const tabs = [
+    { label: 'Todo', icon: <HistoryIcon /> },
+    { label: 'Favoritos', icon: <StarIcon /> },
+    { label: 'Científico', icon: <ShowChartIcon /> },
+    { label: 'Básico', icon: <CalculatorIcon /> },
+    { label: 'Gráficos', icon: <TimelineIcon /> }
+  ];
+
+  // Función para determinar el color segn el tipo de operación
   const getTypeColor = (type) => {
     switch (type) {
       case 'scientific':
@@ -175,6 +187,8 @@ const HistoryDrawer = memo(({
       setExportAnchorEl(null);
       setShowExportModal(false);
       setShowImportModal(false);
+      setAnchorEl(null);
+      setError(null);
     }
   }, [open]);
 
@@ -234,12 +248,19 @@ const HistoryDrawer = memo(({
         try {
           let importedData;
           if (file.name.endsWith('.csv')) {
-            // Procesar CSV
             const text = e.target.result;
-            const lines = text.split('\n');
+            const lines = text.split('\n').filter(line => line.trim());
             const headers = lines[0].split(',');
+            
+            if (lines.length < 2) {
+              throw new Error('El archivo CSV está vacío o no tiene el formato correcto');
+            }
+            
             importedData = lines.slice(1).map(line => {
               const values = line.split(',');
+              if (values.length < 1) {
+                throw new Error('Línea de CSV inválida');
+              }
               return {
                 operation: values[0],
                 date: new Date(),
@@ -325,17 +346,16 @@ const HistoryDrawer = memo(({
   const renderOperation = (op, index) => (
     <ListItem
       key={index}
-      sx={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'flex-start',
-        gap: 0.5,
-        borderBottom: `1px solid ${theme.palette.divider}`
-      }}
       onClick={(e) => {
-        // Solo ejecutar onSelectOperation si no estamos en modo edición
+        e.stopPropagation();
         if (!isEditMode) {
           onSelectOperation(op);
+        }
+      }}
+      sx={{
+        cursor: isEditMode ? 'default' : 'pointer',
+        '&:hover': {
+          bgcolor: isEditMode ? 'transparent' : 'action.hover'
         }
       }}
     >
@@ -358,17 +378,19 @@ const HistoryDrawer = memo(({
         <ListItemText 
           primary={op.operation}
           secondary={
-            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mt: 0.5 }}>
-              <Typography variant="caption" color="text.secondary">
-                {new Date(op.date).toLocaleTimeString()}
-              </Typography>
-              <Chip 
-                label={op.type} 
-                size="small" 
-                color={getTypeColor(op.type)}
-                sx={{ height: 20 }}
-              />
-            </Box>
+            <Typography component="div" variant="body2" color="text.secondary">
+              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mt: 0.5 }}>
+                <Typography variant="caption" color="text.secondary">
+                  {new Date(op.date).toLocaleTimeString()}
+                </Typography>
+                <Chip 
+                  label={op.type} 
+                  size="small" 
+                  color={getTypeColor(op.type)}
+                  sx={{ height: 20 }}
+                />
+              </Box>
+            </Typography>
           }
         />
         <Box sx={{ display: 'flex', gap: 0.5 }} onClick={e => e.stopPropagation()}>
@@ -412,6 +434,16 @@ const HistoryDrawer = memo(({
     setShowDeleteConfirmModal(false);
   };
 
+  // Función auxiliar para formatear fechas de manera segura
+  const formatDate = (date) => {
+    try {
+      return new Date(date).toLocaleString();
+    } catch (error) {
+      console.error('Error al formatear fecha:', error);
+      return 'Fecha inválida';
+    }
+  };
+
   return (
     <Drawer
       anchor="right"
@@ -426,7 +458,12 @@ const HistoryDrawer = memo(({
         }
       }}
     >
-      <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <Box sx={{ 
+        height: '100%', 
+        display: 'flex', 
+        flexDirection: 'column',
+        position: 'relative'
+      }}>
         {/* Header mejorado con opciones de vista */}
         <Box sx={{ 
           p: 2, 
@@ -541,7 +578,7 @@ const HistoryDrawer = memo(({
                   {op.isFavorite && <StarIcon color="warning" fontSize="small" />}
                 </Box>
                 <Typography variant="caption" color="text.secondary">
-                  {new Date(op.date).toLocaleString()}
+                  {formatDate(op.date)}
                 </Typography>
               </Paper>
             ))}
@@ -551,18 +588,17 @@ const HistoryDrawer = memo(({
           <List>
             <AnimatePresence>
               {filteredHistory.length > 0 ? (
-                <List>
-                  {filteredHistory.map((op, index) => (
-                    <motion.div
-                      layout
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                    >
-                      {renderOperation(op, index)}
-                    </motion.div>
-                  ))}
-                </List>
+                filteredHistory.map((op, index) => (
+                  <motion.div
+                    key={`${op.date}-${index}`}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    transition={{ duration: 0.2, delay: index * 0.05 }}
+                  >
+                    {renderOperation(op, index)}
+                  </motion.div>
+                ))
               ) : (
                 <Box sx={{
                   height: '100%',
@@ -572,8 +608,7 @@ const HistoryDrawer = memo(({
                   flexDirection: 'column',
                   opacity: 0.5
                 }}>
-                  <HistoryIcon sx={{ fontSize: 60, mb: 2 }} />
-                  <Typography variant="h6">
+                  <Typography variant="body1" color="text.secondary">
                     No hay operaciones
                   </Typography>
                 </Box>
@@ -585,89 +620,145 @@ const HistoryDrawer = memo(({
         {/* Botón flotante para móvil */}
         <SpeedDial
           ariaLabel="Opciones del historial"
-          sx={{ position: 'fixed', bottom: 16, right: 16 }}
+          sx={{ 
+            position: 'absolute',
+            bottom: 80,
+            right: 16,
+            zIndex: theme.zIndex.speedDial,
+            '& .MuiSpeedDial-fab': {
+              bgcolor: theme.palette.primary.main,
+              '&:hover': {
+                bgcolor: theme.palette.primary.dark,
+              }
+            },
+            '& .MuiSpeedDialAction-fab': {
+              bgcolor: theme.palette.background.paper,
+              color: theme.palette.text.primary,
+              boxShadow: theme.shadows[2],
+              '&:hover': {
+                bgcolor: theme.palette.action.hover,
+                boxShadow: theme.shadows[4]
+              }
+            }
+          }}
           icon={<SpeedDialIcon />}
-          FabProps={{ size: 'medium' }}
+          FabProps={{ 
+            size: 'medium',
+            sx: { 
+              boxShadow: theme.shadows[3],
+              '&:hover': {
+                boxShadow: theme.shadows[6]
+              }
+            }
+          }}
         >
           <SpeedDialAction
             icon={viewMode === 'list' ? <ViewModuleIcon /> : <ViewListIcon />}
             tooltipTitle="Cambiar vista"
+            tooltipOpen={false}
+            sx={{ 
+              '&:hover': {
+                transform: 'scale(1.05)',
+                transition: 'transform 0.2s'
+              }
+            }}
             onClick={() => setViewMode(prev => prev === 'list' ? 'grid' : 'list')}
           />
           <SpeedDialAction
             icon={<SortIcon />}
             tooltipTitle="Ordenar"
+            tooltipOpen={false}
+            sx={{ 
+              '&:hover': {
+                transform: 'scale(1.05)',
+                transition: 'transform 0.2s'
+              }
+            }}
             onClick={(e) => setAnchorEl(e.currentTarget)}
           />
           {filteredHistory.length > 0 && (
             <SpeedDialAction
               icon={<FileDownloadIcon />}
               tooltipTitle="Exportar"
+              tooltipOpen={false}
+              sx={{ 
+                '&:hover': {
+                  transform: 'scale(1.05)',
+                  transition: 'transform 0.2s'
+                }
+              }}
               onClick={() => setShowExportModal(true)}
             />
           )}
         </SpeedDial>
 
+        {/* Contenido principal con scroll */}
         <Box sx={{ 
-          display: 'flex', 
-          gap: 1, 
-          p: 2,
-          borderBottom: `1px solid ${theme.palette.divider}`,
-          flexWrap: 'wrap',
-          justifyContent: 'center'
+          flex: 1,
+          overflowY: 'auto',
+          pb: '80px'
         }}>
-          <Button
-            variant="contained"
-            startIcon={<FileUploadIcon />}
-            onClick={() => setShowImportModal(true)}
-            size="small"
-          >
-            Importar
-          </Button>
-          {filteredHistory.length > 0 && (
-            <>
-              <Button
-                variant="contained"
-                startIcon={<FileDownloadIcon />}
-                onClick={() => setShowExportModal(true)}
-                size="small"
-              >
-                Exportar
-              </Button>
-              <Button
-                variant="outlined"
-                color="error"
-                startIcon={<DeleteIcon />}
-                onClick={handleDeleteAll}
-                size="small"
-              >
-                Vaciar
-              </Button>
-              <Button
-                variant="outlined"
-                startIcon={isEditMode ? (selectedOperations.length > 0 ? <DeleteIcon /> : <CloseIcon />) : <EditIcon />}
-                onClick={() => {
-                  if (isEditMode) {
-                    if (selectedOperations.length > 0) {
-                      // Llamar a onDeleteOperation con los índices seleccionados
-                      onDeleteOperation(selectedOperations);
-                      setSelectedOperations([]);
+          <Box sx={{ 
+            display: 'flex', 
+            gap: 1, 
+            p: 2,
+            borderBottom: `1px solid ${theme.palette.divider}`,
+            flexWrap: 'wrap',
+            justifyContent: 'center'
+          }}>
+            <Button
+              variant="contained"
+              startIcon={<FileUploadIcon />}
+              onClick={() => setShowImportModal(true)}
+              size="small"
+            >
+              Importar
+            </Button>
+            {filteredHistory.length > 0 && (
+              <>
+                <Button
+                  variant="contained"
+                  startIcon={<FileDownloadIcon />}
+                  onClick={() => setShowExportModal(true)}
+                  size="small"
+                >
+                  Exportar
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  startIcon={<DeleteIcon />}
+                  onClick={handleDeleteAll}
+                  size="small"
+                >
+                  Vaciar
+                </Button>
+                <Button
+                  variant="outlined"
+                  startIcon={isEditMode ? (selectedOperations.length > 0 ? <DeleteIcon /> : <CloseIcon />) : <EditIcon />}
+                  onClick={() => {
+                    if (isEditMode) {
+                      if (selectedOperations.length > 0) {
+                        // Llamar a onDeleteOperation con los índices seleccionados
+                        onDeleteOperation(selectedOperations);
+                        setSelectedOperations([]);
+                      }
+                      setIsEditMode(false);
+                    } else {
+                      setIsEditMode(true);
                     }
-                    setIsEditMode(false);
-                  } else {
-                    setIsEditMode(true);
-                  }
-                }}
-                size="small"
-              >
-                {isEditMode 
-                  ? selectedOperations.length > 0 
-                    ? 'Eliminar' 
-                    : 'Cancelar'
-                  : 'Editar'}
-              </Button>
-            </>
-          )}
+                  }}
+                  size="small"
+                >
+                  {isEditMode 
+                    ? selectedOperations.length > 0 
+                      ? 'Eliminar' 
+                      : 'Cancelar'
+                    : 'Editar'}
+                </Button>
+              </>
+            )}
+          </Box>
         </Box>
       </Box>
 
@@ -803,6 +894,64 @@ const HistoryDrawer = memo(({
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Añadir el componente de Tabs después del header del drawer */}
+      <Box sx={{ 
+        borderBottom: 1, 
+        borderColor: 'divider',
+        bgcolor: theme.palette.background.paper,
+        position: 'sticky',
+        top: 0,
+        zIndex: 1,
+        width: '100%',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+      }}>
+        <Tabs 
+          value={activeTab}
+          onChange={(_, newValue) => setActiveTab(newValue)}
+          variant="scrollable"
+          scrollButtons={false}
+          allowScrollButtonsMobile
+          sx={{
+            minHeight: 56,
+            '& .MuiTab-root': {
+              minHeight: 56,
+              minWidth: {
+                xs: '20%', // En móviles, dividir el espacio equitativamente
+                sm: 'auto'  // En tablets y desktop, ancho automático
+              },
+              fontSize: {
+                xs: '0.75rem',
+                sm: '0.875rem'
+              },
+              padding: {
+                xs: '6px 12px',
+                sm: '12px 16px'
+              }
+            },
+            '& .MuiTabs-indicator': {
+              height: 3
+            }
+          }}
+        >
+          {tabs.map((tab, index) => (
+            <Tab
+              key={tab.label}
+              label={
+                <Box sx={{ 
+                  display: 'flex', 
+                  flexDirection: { xs: 'column', sm: 'row' },
+                  alignItems: 'center', 
+                  gap: { xs: 0.5, sm: 1 }
+                }}>
+                  {tab.icon}
+                  <span>{tab.label}</span>
+                </Box>
+              }
+            />
+          ))}
+        </Tabs>
+      </Box>
     </Drawer>
   );
 });

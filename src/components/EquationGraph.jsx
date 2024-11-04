@@ -7,7 +7,10 @@ import {
   IconButton, 
   Tooltip,
   ButtonGroup,
-  Button
+  Button,
+  Slider,
+  Divider,
+  Grid
 } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
@@ -22,7 +25,13 @@ import useMediaQuery from '@mui/material/useMediaQuery';
 import MenuIcon from '@mui/icons-material/Menu';
 import CloseIcon from '@mui/icons-material/Close';
 
-const EquationGraph = ({ equation, solutions, onAddToHistory }) => {
+const EquationGraph = ({ 
+  equation, 
+  solutions, 
+  onAddToHistory, 
+  onMenuOpenChange,
+  showCalculatorButtons = false 
+}) => {
   const svgRef = useRef(null);
   const containerRef = useRef(null);
   const theme = useTheme();
@@ -35,158 +44,273 @@ const EquationGraph = ({ equation, solutions, onAddToHistory }) => {
   const [showPoints, setShowPoints] = useState(true);
   const [dimensions, setDimensions] = useState({ width: 400, height: 400 });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showGuideLines, setShowGuideLines] = useState(false);
+  const [selectedPoint, setSelectedPoint] = useState(null);
+  const [showTooltip, setShowTooltip] = useState(false);
+
+  // Agregar dimensiones del margen como constante
+  const MARGIN = { top: 20, right: 20, bottom: 30, left: 40 };
+  
+  // Función auxiliar para calcular dimensiones internas
+  const getInnerDimensions = (width, height) => ({
+    innerWidth: width - MARGIN.left - MARGIN.right,
+    innerHeight: height - MARGIN.top - MARGIN.bottom
+  });
 
   // Efecto para manejar el tamaño responsivo
   useEffect(() => {
     const updateDimensions = () => {
       if (containerRef.current) {
         const containerWidth = containerRef.current.offsetWidth;
-        const newWidth = Math.min(containerWidth - 40, 600); // 40px para padding
+        const containerHeight = containerRef.current.offsetHeight;
+        
+        // Ajustar dimensiones según el dispositivo
+        const newWidth = Math.min(containerWidth - (isMobile ? 20 : 40), 600);
+        const newHeight = isMobile 
+          ? Math.min(containerHeight - 100, newWidth * 0.8) // Más compacto en móvil
+          : Math.min(containerHeight - 40, newWidth);
+        
         setDimensions({
           width: newWidth,
-          height: isMobile ? newWidth * 0.8 : newWidth // Proporción diferente en móvil
+          height: newHeight
         });
       }
     };
 
     updateDimensions();
-    window.addEventListener('resize', updateDimensions);
-    return () => window.removeEventListener('resize', updateDimensions);
+    const resizeObserver = new ResizeObserver(updateDimensions);
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
+
+    return () => {
+      if (containerRef.current) {
+        resizeObserver.unobserve(containerRef.current);
+      }
+    };
   }, [isMobile]);
 
-  // Componente de controles mejorado para móvil
-  const Controls = () => (
-    <>
-      {isMobile && (
-        <Box sx={{ 
-          position: 'fixed',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          bgcolor: 'background.paper',
-          borderTop: 1,
-          borderColor: 'divider',
-          zIndex: 1000,
-          p: 2,
-          display: mobileMenuOpen ? 'block' : 'none',
-          maxHeight: '60vh',
-          overflowY: 'auto',
-          boxShadow: '0px -2px 10px rgba(0,0,0,0.1)'
-        }}>
-          <Box sx={{ 
-            display: 'flex', 
-            flexDirection: 'column',
-            gap: 2 
-          }}>
-            {/* Cabecera con título y botón cerrar */}
-            <Box sx={{ 
-              display: 'flex', 
-              justifyContent: 'space-between', 
-              alignItems: 'center',
-              mb: 1 
-            }}>
-              <Typography variant="h6">
-                Controles
-              </Typography>
-              <IconButton 
-                onClick={() => setMobileMenuOpen(false)}
+  const MobileControls = () => (
+    <Box sx={{
+      position: 'absolute',
+      bottom: 0,
+      left: 0,
+      right: 0,
+      bgcolor: 'background.paper',
+      borderTopLeftRadius: 16,
+      borderTopRightRadius: 16,
+      boxShadow: 3,
+      p: 2,
+      zIndex: 1200,
+      transform: mobileMenuOpen ? 'translateY(0)' : 'translateY(100%)',
+      transition: 'transform 0.3s ease-in-out',
+      maxHeight: '50vh',
+      overflowY: 'auto',
+      mb: showCalculatorButtons ? 8 : 0
+    }}>
+      <Grid container spacing={2}>
+        {/* Botones de control */}
+        <Grid item xs={12}>
+          <Typography variant="subtitle2" gutterBottom>
+            Controles
+          </Typography>
+          <Grid container spacing={1}>
+            <Grid item xs={3}>
+              <Button
+                fullWidth
+                variant={showGrid ? "contained" : "outlined"}
+                onClick={() => setShowGrid(!showGrid)}
                 size="small"
               >
-                <CloseIcon />
-              </IconButton>
-            </Box>
+                Grid
+              </Button>
+            </Grid>
+            <Grid item xs={3}>
+              <Button
+                fullWidth
+                variant={showAxis ? "contained" : "outlined"}
+                onClick={() => setShowAxis(!showAxis)}
+                size="small"
+              >
+                Ejes
+              </Button>
+            </Grid>
+            <Grid item xs={3}>
+              <Button
+                fullWidth
+                variant={showPoints ? "contained" : "outlined"}
+                onClick={() => setShowPoints(!showPoints)}
+                size="small"
+              >
+                Puntos
+              </Button>
+            </Grid>
+            <Grid item xs={3}>
+              <Button
+                fullWidth
+                variant={showGuideLines ? "contained" : "outlined"}
+                onClick={() => setShowGuideLines(!showGuideLines)}
+                size="small"
+              >
+                Guías
+              </Button>
+            </Grid>
+          </Grid>
+        </Grid>
 
-            {/* Grupo de Zoom */}
-            <Box>
-              <Typography variant="subtitle2" sx={{ mb: 1 }}>Zoom</Typography>
-              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1 }}>
-                <Button
-                  fullWidth
-                  startIcon={<ZoomInIcon />}
-                  onClick={() => handleZoom('in')}
-                  variant="outlined"
-                >
-                  Aumentar
-                </Button>
-                <Button
-                  fullWidth
-                  startIcon={<ZoomOutIcon />}
-                  onClick={() => handleZoom('out')}
-                  variant="outlined"
-                >
-                  Reducir
-                </Button>
-                <Button
-                  fullWidth
-                  startIcon={<RestoreIcon />}
-                  onClick={() => handleZoom('reset')}
-                  variant="outlined"
-                >
-                  Reset
-                </Button>
-              </Box>
-            </Box>
-
-            {/* Grupo de Visualización */}
-            <Box>
-              <Typography variant="subtitle2" sx={{ mb: 1 }}>Visualización</Typography>
-              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1 }}>
-                <Button
-                  fullWidth
-                  startIcon={<GridOnIcon />}
-                  onClick={() => setShowGrid(!showGrid)}
-                  variant={showGrid ? "contained" : "outlined"}
-                >
-                  Grid
-                </Button>
-                <Button
-                  fullWidth
-                  startIcon={<StraightIcon />}
-                  onClick={() => setShowAxis(!showAxis)}
-                  variant={showAxis ? "contained" : "outlined"}
-                >
-                  Ejes
-                </Button>
-                <Button
-                  fullWidth
-                  startIcon={<ScatterPlotIcon />}
-                  onClick={() => setShowPoints(!showPoints)}
-                  variant={showPoints ? "contained" : "outlined"}
-                >
-                  Puntos
-                </Button>
-              </Box>
-            </Box>
-
-            {/* Grupo de Exportar */}
-            <Box>
-              <Typography variant="subtitle2" sx={{ mb: 1 }}>Exportar</Typography>
-              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 1 }}>
-                <Button
-                  fullWidth
-                  startIcon={<DownloadIcon />}
-                  onClick={handleDownload}
-                  variant="outlined"
-                >
-                  SVG
-                </Button>
-                <Button
-                  fullWidth
-                  startIcon={<ImageIcon />}
-                  onClick={handleDownloadPNG}
-                  variant="outlined"
-                >
-                  PNG
-                </Button>
-              </Box>
-            </Box>
+        {/* Control de zoom */}
+        <Grid item xs={12}>
+          <Typography variant="subtitle2" gutterBottom>
+            Zoom
+          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <IconButton size="small" onClick={() => setZoom(Math.max(zoom - 0.5, 0.5))}>
+              <ZoomOutIcon />
+            </IconButton>
+            <Slider
+              value={zoom}
+              min={0.5}
+              max={5}
+              step={0.5}
+              onChange={(_, value) => setZoom(value)}
+              sx={{ flex: 1 }}
+            />
+            <IconButton size="small" onClick={() => setZoom(Math.min(zoom + 0.5, 5))}>
+              <ZoomInIcon />
+            </IconButton>
           </Box>
-        </Box>
-      )}
-    </>
+        </Grid>
+
+        {/* Nuevo grupo de botones para descarga */}
+        <Grid item xs={12}>
+          <Typography variant="subtitle2" gutterBottom>
+            Descargar
+          </Typography>
+          <Grid container spacing={1}>
+            <Grid item xs={6}>
+              <Button
+                fullWidth
+                variant="outlined"
+                startIcon={<DownloadIcon />}
+                onClick={() => handleDownload('svg')}
+                size="small"
+              >
+                SVG
+              </Button>
+            </Grid>
+            <Grid item xs={6}>
+              <Button
+                fullWidth
+                variant="outlined"
+                startIcon={<ImageIcon />}
+                onClick={() => handleDownload('png')}
+                size="small"
+              >
+                PNG
+              </Button>
+            </Grid>
+          </Grid>
+        </Grid>
+      </Grid>
+    </Box>
+  );
+
+  const DesktopControls = () => (
+    <Paper
+      elevation={2}
+      sx={{
+        position: 'absolute',
+        top: 16,
+        right: 16,
+        p: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 1,
+        bgcolor: 'background.paper',
+        borderRadius: 2,
+        '& .MuiButtonGroup-root': {
+          boxShadow: 'none'
+        }
+      }}
+    >
+      <ButtonGroup orientation="vertical" size="small">
+        <Tooltip title="Zoom +" placement="left">
+          <Button onClick={() => setZoom(Math.min(zoom + 0.5, 5))}>
+            <ZoomInIcon />
+          </Button>
+        </Tooltip>
+        <Tooltip title="Zoom -" placement="left">
+          <Button onClick={() => setZoom(Math.max(zoom - 0.5, 0.5))}>
+            <ZoomOutIcon />
+          </Button>
+        </Tooltip>
+        <Tooltip title="Restablecer zoom" placement="left">
+          <Button onClick={() => setZoom(1)}>
+            <RestoreIcon />
+          </Button>
+        </Tooltip>
+      </ButtonGroup>
+
+      <Divider />
+
+      <ButtonGroup orientation="vertical" size="small">
+        <Tooltip title="Mostrar/ocultar cuadrícula" placement="left">
+          <Button 
+            onClick={() => setShowGrid(!showGrid)}
+            variant={showGrid ? "contained" : "outlined"}
+          >
+            <GridOnIcon />
+          </Button>
+        </Tooltip>
+        <Tooltip title="Mostrar/ocultar ejes" placement="left">
+          <Button 
+            onClick={() => setShowAxis(!showAxis)}
+            variant={showAxis ? "contained" : "outlined"}
+          >
+            <StraightIcon />
+          </Button>
+        </Tooltip>
+        <Tooltip title="Mostrar/ocultar puntos" placement="left">
+          <Button 
+            onClick={() => setShowPoints(!showPoints)}
+            variant={showPoints ? "contained" : "outlined"}
+          >
+            <ScatterPlotIcon />
+          </Button>
+        </Tooltip>
+        <Tooltip title="Mostrar/ocultar líneas guía" placement="left">
+          <Button 
+            onClick={() => setShowGuideLines(!showGuideLines)}
+            variant={showGuideLines ? "contained" : "outlined"}
+          >
+            <GridOnIcon sx={{ transform: 'rotate(45deg)' }} />
+          </Button>
+        </Tooltip>
+      </ButtonGroup>
+
+      <Divider />
+
+      <Tooltip title="Descargar SVG" placement="left">
+        <Button 
+          onClick={handleDownloadSVG}
+          size="small"
+          startIcon={<DownloadIcon />}
+        >
+          SVG
+        </Button>
+      </Tooltip>
+    </Paper>
   );
 
   const parseEquation = (eq) => {
+    if (!eq || typeof eq !== 'string') {
+      return [{
+        type: 'single',
+        equation: '',
+        original: ''
+      }];
+    }
+
     // Manejar sistemas de ecuaciones
     if (eq.includes(';')) {
       return eq.split(';').map(e => ({
@@ -196,13 +320,25 @@ const EquationGraph = ({ equation, solutions, onAddToHistory }) => {
       }));
     }
 
-    // Para ecuaciones simples, convertirlas a forma estándar (todo a la izquierda)
-    const sides = eq.split('=');
-    return [{
-      type: 'single',
-      equation: `${sides[0]}-${sides[1]}`,
-      original: eq
-    }];
+    // Para ecuaciones simples, convertirlas a forma estándar
+    try {
+      const sides = eq.split('=');
+      if (sides.length !== 2) {
+        throw new Error('Formato de ecuación inválido');
+      }
+      return [{
+        type: 'single',
+        equation: `${sides[0].trim()}-${sides[1].trim()}`,
+        original: eq.trim()
+      }];
+    } catch (error) {
+      console.error('Error al parsear ecuación:', error);
+      return [{
+        type: 'single',
+        equation: '',
+        original: eq
+      }];
+    }
   };
 
   const evaluateEquation = (x, expr) => {
@@ -243,34 +379,44 @@ const EquationGraph = ({ equation, solutions, onAddToHistory }) => {
   };
 
   const generatePoints = (equations) => {
-    const { width, height } = dimensions; // Obtener dimensiones del estado
-    const points = {};
-    const xMin = -10 * zoom;
-    const xMax = 10 * zoom;
-    const step = (xMax - xMin) / width; // Usar width para calcular el paso
+    if (!equations || !Array.isArray(equations)) {
+      return {};
+    }
 
-    equations.forEach((eq, index) => {
-      points[index] = [];
-      
-      if (eq.type === 'system') {
-        // Para sistemas de ecuaciones
-        for (let x = xMin; x <= xMax; x += step) {
-          const y = evaluateEquation(x, eq.equation);
-          if (!isNaN(y) && isFinite(y) && Math.abs(y) <= 10 * zoom) {
-            points[index].push([x, y]);
+    return equations.reduce((acc, eq, index) => {
+      try {
+        const { width, height } = dimensions; // Obtener dimensiones del estado
+        const points = {};
+        const xMin = -10 * zoom;
+        const xMax = 10 * zoom;
+        const step = (xMax - xMin) / width; // Usar width para calcular el paso
+
+        if (eq.type === 'system') {
+          // Para sistemas de ecuaciones
+          for (let x = xMin; x <= xMax; x += step) {
+            const y = evaluateEquation(x, eq.equation);
+            if (!isNaN(y) && isFinite(y) && Math.abs(y) <= 10 * zoom) {
+              points[index] = [];
+              points[index].push([x, y]);
+            }
+          }
+        } else {
+          // Para ecuaciones simples
+          for (let x = xMin; x <= xMax; x += step) {
+            const y = evaluateEquation(x, eq.equation);
+            if (!isNaN(y) && isFinite(y) && Math.abs(y) <= 10 * zoom) {
+              points[index] = [];
+              points[index].push([x, y]);
+            }
           }
         }
-      } else {
-        // Para ecuaciones simples
-        for (let x = xMin; x <= xMax; x += step) {
-          const y = evaluateEquation(x, eq.equation);
-          if (!isNaN(y) && isFinite(y) && Math.abs(y) <= 10 * zoom) {
-            points[index].push([x, y]);
-          }
-        }
+
+        return { ...acc, [index]: points };
+      } catch (error) {
+        console.error('Error generando puntos:', error);
+        return { ...acc, [index]: [] };
       }
-    });
-    return points;
+    }, {});
   };
 
   const handleZoom = (action) => {
@@ -289,434 +435,410 @@ const EquationGraph = ({ equation, solutions, onAddToHistory }) => {
     }
   };
 
-  const handleDownload = () => {
-    const svgData = svgRef.current.outerHTML;
-    const svgBlob = new Blob([svgData], {type: 'image/svg+xml;charset=utf-8'});
-    const svgUrl = URL.createObjectURL(svgBlob);
-    const downloadLink = document.createElement('a');
-    downloadLink.href = svgUrl;
-    downloadLink.download = 'grafico_ecuacion.svg';
-    document.body.appendChild(downloadLink);
-    downloadLink.click();
-    document.body.removeChild(downloadLink);
-  };
+  const handleDownload = (format) => {
+    const svg = svgRef.current;
+    if (!svg) return;
 
-  const handleDownloadPNG = () => {
-    if (!svgRef.current) return;
-    
-    const { width, height } = dimensions; // Obtener dimensiones del estado
-    const svgData = new XMLSerializer().serializeToString(svgRef.current);
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-    const img = new Image();
-
-    // Configurar canvas
-    canvas.width = width * 2; // Usar width del estado
-    canvas.height = height * 2; // Usar height del estado
-    context.scale(2, 2);
-    
-    // Crear Blob del SVG
-    const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
-    const url = URL.createObjectURL(svgBlob);
-
-    img.onload = () => {
-      // Fondo blanco para PNG
-      context.fillStyle = theme.palette.background.default;
-      context.fillRect(0, 0, width, height); // Usar dimensiones del estado
-      
-      // Dibujar SVG en canvas
-      context.drawImage(img, 0, 0, width, height); // Usar dimensiones del estado
-      
-      // Descargar PNG
-      const pngUrl = canvas.toDataURL('image/png');
+    if (format === 'svg') {
+      const svgData = new XMLSerializer().serializeToString(svg);
+      const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+      const svgUrl = URL.createObjectURL(svgBlob);
       const downloadLink = document.createElement('a');
-      downloadLink.href = pngUrl;
-      downloadLink.download = 'grafico.png';
+      downloadLink.href = svgUrl;
+      downloadLink.download = 'grafico.svg';
       document.body.appendChild(downloadLink);
       downloadLink.click();
       document.body.removeChild(downloadLink);
-      
-      // Limpiar
-      URL.revokeObjectURL(url);
-    };
+      URL.revokeObjectURL(svgUrl);
+    } else if (format === 'png') {
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      const svgData = new XMLSerializer().serializeToString(svg);
+      const img = new Image();
+      const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(svgBlob);
 
-    img.src = url;
+      img.onload = () => {
+        canvas.width = svg.width.baseVal.value;
+        canvas.height = svg.height.baseVal.value;
+        context.fillStyle = theme.palette.background.default;
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(img, 0, 0);
+        const pngUrl = canvas.toDataURL('image/png');
+        const downloadLink = document.createElement('a');
+        downloadLink.href = pngUrl;
+        downloadLink.download = 'grafico.png';
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+        URL.revokeObjectURL(url);
+      };
+
+      img.src = url;
+    }
+  };
+
+  const handleDownloadSVG = () => {
+    const svgData = svgRef.current.outerHTML;
+    const blob = new Blob([svgData], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'grafico-ecuacion.svg';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   useEffect(() => {
-    if (!svgRef.current || !equation) return;
-
-    // Obtener dimensiones del estado
-    const { width, height } = dimensions;
-
-    d3.select(svgRef.current).selectAll('*').remove();
-    const margin = { top: 20, right: 20, bottom: 30, left: 40 };
-    const innerWidth = width - margin.left - margin.right;
-    const innerHeight = height - margin.top - margin.bottom;
-
-    // Contenedor principal con clip-path
-    const svg = d3.select(svgRef.current)
-      .attr('width', width)
-      .attr('height', height);
-
-    // Definir clip-path para contener el zoom
-    svg.append('defs')
-      .append('clipPath')
-      .attr('id', 'zoom-clip')
-      .append('rect')
-      .attr('width', innerWidth)
-      .attr('height', innerHeight);
-
-    // Grupo principal con transformación
-    const mainGroup = svg.append('g')
-      .attr('transform', `translate(${margin.left},${margin.top})`);
-
-    // Grupo para elementos zoomables
-    const zoomGroup = mainGroup.append('g')
-      .attr('clip-path', 'url(#zoom-clip)');
-
-    const equations = parseEquation(equation);
-    const allPoints = generatePoints(equations);
-
-    if (Object.values(allPoints).every(points => points.length === 0)) {
-      mainGroup.append('text')
-        .attr('x', innerWidth / 2)
-        .attr('y', innerHeight / 2)
-        .attr('text-anchor', 'middle')
-        .style('fill', theme.palette.text.primary)
-        .text('No se puede graficar esta ecuación');
+    if (!svgRef.current || !equation) {
       return;
     }
 
-    const xDomain = [-10 * zoom, 10 * zoom];
-    const yDomain = [-10 * zoom, 10 * zoom];
+    try {
+      const { width, height } = dimensions;
+      const { innerWidth, innerHeight } = getInnerDimensions(width, height);
+      
+      // Limpiar SVG existente
+      d3.select(svgRef.current).selectAll('*').remove();
 
-    const xScale = d3.scaleLinear()
-      .domain(xDomain)
-      .range([0, innerWidth]);
+      // Crear grupos principales
+      const svg = d3.select(svgRef.current)
+        .attr('width', width)
+        .attr('height', height);
 
-    const yScale = d3.scaleLinear()
-      .domain(yDomain)
-      .range([innerHeight, 0]);
+      const mainGroup = svg.append('g')
+        .attr('transform', `translate(${MARGIN.left},${MARGIN.top})`);
 
-    // Función mejorada para dibujar grid y ejes
-    const drawGridAndAxes = (transform) => {
-      const scaledX = transform ? transform.rescaleX(xScale) : xScale;
-      const scaledY = transform ? transform.rescaleY(yScale) : yScale;
+      const zoomGroup = mainGroup.append('g')
+        .attr('clip-path', 'url(#zoom-clip)');
 
-      // Limpiar grid y ejes existentes
-      mainGroup.selectAll('.grid, .axis').remove();
+      // Definir clip path
+      svg.append('defs')
+        .append('clipPath')
+        .attr('id', 'zoom-clip')
+        .append('rect')
+        .attr('width', innerWidth)
+        .attr('height', innerHeight);
 
-      if (showGrid) {
-        // Grid
-        const xGrid = d3.axisBottom(scaledX)
-          .tickSize(-innerHeight)
-          .tickFormat('')
-          .ticks(20);
-
-        const yGrid = d3.axisLeft(scaledY)
-          .tickSize(-innerWidth)
-          .tickFormat('')
-          .ticks(20);
-
-        zoomGroup.append('g')
-          .attr('class', 'grid x-grid')
-          .attr('transform', `translate(0,${innerHeight})`)
-          .call(xGrid)
-          .style('stroke', theme.palette.divider)
-          .style('stroke-opacity', 0.1);
-
-        zoomGroup.append('g')
-          .attr('class', 'grid y-grid')
-          .call(yGrid)
-          .style('stroke', theme.palette.divider)
-          .style('stroke-opacity', 0.1);
+      const equations = parseEquation(equation);
+      if (!equations || equations.length === 0) {
+        console.error('No se pudo parsear la ecuación');
+        return;
       }
 
-      if (showAxis) {
-        // Ejes
-        mainGroup.append('g')
-          .attr('class', 'axis x-axis')
-          .attr('transform', `translate(0,${innerHeight/2})`)
-          .call(d3.axisBottom(scaledX))
-          .style('color', theme.palette.text.primary);
+      const allPoints = generatePoints(equations);
 
-        mainGroup.append('g')
-          .attr('class', 'axis y-axis')
-          .attr('transform', `translate(${innerWidth/2},0)`)
-          .call(d3.axisLeft(scaledY))
-          .style('color', theme.palette.text.primary);
-
-        // Etiquetas
+      if (Object.values(allPoints).every(points => points.length === 0)) {
         mainGroup.append('text')
-          .attr('class', 'axis-label')
-          .attr('x', innerWidth)
-          .attr('y', innerHeight/2 - 10)
-          .attr('text-anchor', 'end')
-          .text('x')
-          .style('fill', theme.palette.text.primary);
-
-        mainGroup.append('text')
-          .attr('class', 'axis-label')
-          .attr('x', innerWidth/2 + 10)
-          .attr('y', 10)
-          .attr('text-anchor', 'start')
-          .text('y')
-          .style('fill', theme.palette.text.primary);
+          .attr('x', innerWidth / 2)
+          .attr('y', innerHeight / 2)
+          .attr('text-anchor', 'middle')
+          .style('fill', theme.palette.text.primary)
+          .text('No se puede graficar esta ecuación');
+        return;
       }
-    };
 
-    // Zoom behavior mejorado para táctil
-    const zoomBehavior = d3.zoom()
-      .scaleExtent([0.5, 5])
-      .translateExtent([[0, 0], [width, height]])
-      .extent([[0, 0], [width, height]])
-      .touchable(true)
-      .on('zoom', (event) => {
-        const transform = event.transform;
-        zoomGroup.attr('transform', transform);
-        drawGridAndAxes(transform);
-        zoomGroup.selectAll('.equation-line, .solution-point')
-          .attr('transform', transform);
-      });
+      const xDomain = [-10 * zoom, 10 * zoom];
+      const yDomain = [-10 * zoom, 10 * zoom];
 
-    if (isMobile) {
-      zoomBehavior
-        .filter(event => {
-          // Mejorar detección de gestos táctiles
-          if (event.type === 'touchstart' || event.type === 'touchmove') {
-            return event.touches.length === 1;
-          }
-          return !event.button && !event.ctrlKey;
-        })
-        .wheelDelta(event => {
-          return -event.deltaY * (event.deltaMode === 1 ? 0.05 : event.deltaMode ? 1 : 0.002);
-        });
-    }
+      const xScale = d3.scaleLinear()
+        .domain(xDomain)
+        .range([0, innerWidth]);
 
-    // Aplicar zoom
-    svg.call(zoomBehavior);
+      const yScale = d3.scaleLinear()
+        .domain(yDomain)
+        .range([innerHeight, 0]);
 
-    // Dibujar grid y ejes iniciales
-    drawGridAndAxes();
+      // Función mejorada para dibujar grid y ejes
+      const drawGridAndAxes = (transform) => {
+        const scaledX = transform ? transform.rescaleX(xScale) : xScale;
+        const scaledY = transform ? transform.rescaleY(yScale) : yScale;
 
-    // Dibujar ecuaciones
-    Object.values(allPoints).forEach((points, index) => {
-      const line = d3.line()
-        .x(d => xScale(d[0]))
-        .y(d => yScale(d[1]))
-        .curve(d3.curveMonotoneX);
+        // Limpiar grid y ejes existentes
+        mainGroup.selectAll('.grid, .axis').remove();
 
-      zoomGroup.append('path')
-        .datum(points)
-        .attr('class', 'equation-line')
-        .attr('fill', 'none')
-        .attr('stroke', index === 0 ? theme.palette.primary.main : theme.palette.secondary.main)
-        .attr('stroke-width', 2)
-        .attr('d', line);
-    });
+        if (showGrid) {
+          // Grid
+          const xGrid = d3.axisBottom(scaledX)
+            .tickSize(-innerHeight)
+            .tickFormat('')
+            .ticks(20);
 
-    // Puntos de solución
-    if (showPoints && solutions) {
-      solutions.forEach(sol => {
-        if (sol.type === 'real' || sol.type === 'system') {
-          const x = parseFloat(sol.x);
-          const y = sol.y ? parseFloat(sol.y) : 0;
+          const yGrid = d3.axisLeft(scaledY)
+            .tickSize(-innerWidth)
+            .tickFormat('')
+            .ticks(20);
 
-          const point = zoomGroup.append('g')
-            .attr('class', 'solution-point');
+          zoomGroup.append('g')
+            .attr('class', 'grid x-grid')
+            .attr('transform', `translate(0,${innerHeight})`)
+            .call(xGrid)
+            .style('stroke', theme.palette.divider)
+            .style('stroke-opacity', 0.1);
 
-          point.append('circle')
-            .attr('cx', xScale(x))
-            .attr('cy', yScale(y))
-            .attr('r', 5)
-            .attr('fill', theme.palette.secondary.main)
-            .attr('stroke', theme.palette.background.paper)
-            .attr('stroke-width', 2);
+          zoomGroup.append('g')
+            .attr('class', 'grid y-grid')
+            .call(yGrid)
+            .style('stroke', theme.palette.divider)
+            .style('stroke-opacity', 0.1);
+        }
 
-          // Tooltip mejorado
-          const tooltip = point.append('g')
-            .attr('class', 'tooltip')
-            .style('opacity', 0)
-            .attr('pointer-events', 'none');
+        if (showAxis) {
+          // Ejes
+          mainGroup.append('g')
+            .attr('class', 'axis x-axis')
+            .attr('transform', `translate(0,${innerHeight/2})`)
+            .call(d3.axisBottom(scaledX))
+            .style('color', theme.palette.text.primary);
 
-          tooltip.append('rect')
-            .attr('x', xScale(x) + 10)
-            .attr('y', yScale(y) - 30)
-            .attr('width', 100)
-            .attr('height', 25)
-            .attr('fill', theme.palette.background.paper)
-            .attr('stroke', theme.palette.divider)
-            .attr('rx', 4);
+          mainGroup.append('g')
+            .attr('class', 'axis y-axis')
+            .attr('transform', `translate(${innerWidth/2},0)`)
+            .call(d3.axisLeft(scaledY))
+            .style('color', theme.palette.text.primary);
 
-          tooltip.append('text')
-            .attr('x', xScale(x) + 15)
-            .attr('y', yScale(y) - 12)
-            .text(`(${x.toFixed(2)}, ${y.toFixed(2)})`)
+          // Etiquetas
+          mainGroup.append('text')
+            .attr('class', 'axis-label')
+            .attr('x', innerWidth)
+            .attr('y', innerHeight/2 - 10)
+            .attr('text-anchor', 'end')
+            .text('x')
             .style('fill', theme.palette.text.primary);
 
-          point
-            .on('mouseover', () => {
-              tooltip.transition()
-                .duration(200)
-                .style('opacity', 1);
-            })
-            .on('mouseout', () => {
-              tooltip.transition()
-                .duration(200)
-                .style('opacity', 0);
-            });
+          mainGroup.append('text')
+            .attr('class', 'axis-label')
+            .attr('x', innerWidth/2 + 10)
+            .attr('y', 10)
+            .attr('text-anchor', 'start')
+            .text('y')
+            .style('fill', theme.palette.text.primary);
         }
-      });
-    }
+      };
 
-    // Agregar la ecuación al historial
-    if (onAddToHistory) {
-      onAddToHistory({
-        operation: equation,
-        type: 'graph',
-        timestamp: new Date(),
-        isFavorite: false
-      });
-    }
+      // Zoom behavior mejorado para táctil
+      const zoomBehavior = d3.zoom()
+        .scaleExtent([0.5, 5])
+        .translateExtent([[0, 0], [width, height]])
+        .extent([[0, 0], [width, height]])
+        .touchable(true)
+        .on('zoom', (event) => {
+          const transform = event.transform;
+          zoomGroup.attr('transform', transform);
+          drawGridAndAxes(transform);
+          zoomGroup.selectAll('.equation-line, .solution-point')
+            .attr('transform', transform);
+        });
 
+      if (isMobile) {
+        zoomBehavior
+          .filter(event => {
+            if (event.type === 'touchstart' || event.type === 'touchmove' || event.type === 'touchend') {
+              return event.touches.length === 2; // Permitir zoom con dos dedos
+            }
+            return !event.button;
+          })
+          .touchable(true)
+          .wheelDelta(event => {
+            const delta = event.deltaY * -0.002;
+            return Math.abs(delta) > 0.01 ? delta : 0; // Reducir sensibilidad
+          });
+      }
+
+      // Aplicar zoom
+      svg.call(zoomBehavior);
+
+      // Dibujar grid y ejes iniciales
+      drawGridAndAxes();
+
+      // Dibujar ecuaciones
+      Object.values(allPoints).forEach((points, index) => {
+        const line = d3.line()
+          .x(d => xScale(d[0]))
+          .y(d => yScale(d[1]))
+          .curve(d3.curveMonotoneX);
+
+        zoomGroup.append('path')
+          .datum(points)
+          .attr('class', 'equation-line')
+          .attr('fill', 'none')
+          .attr('stroke', index === 0 ? theme.palette.primary.main : theme.palette.secondary.main)
+          .attr('stroke-width', 2)
+          .attr('d', line);
+      });
+
+      // Puntos de solución
+      if (showPoints && solutions) {
+        solutions.forEach(sol => {
+          if (sol.type === 'real' || sol.type === 'system') {
+            const x = parseFloat(sol.x);
+            const y = sol.y ? parseFloat(sol.y) : 0;
+
+            const point = zoomGroup.append('g')
+              .attr('class', 'solution-point');
+
+            point.append('circle')
+              .attr('cx', xScale(x))
+              .attr('cy', yScale(y))
+              .attr('r', 5)
+              .attr('fill', theme.palette.secondary.main)
+              .attr('stroke', theme.palette.background.paper)
+              .attr('stroke-width', 2);
+
+            // Tooltip mejorado
+            const tooltip = point.append('g')
+              .attr('class', 'tooltip')
+              .style('opacity', 0)
+              .attr('pointer-events', 'none');
+
+            tooltip.append('rect')
+              .attr('x', xScale(x) + 10)
+              .attr('y', yScale(y) - 30)
+              .attr('width', 100)
+              .attr('height', 25)
+              .attr('fill', theme.palette.background.paper)
+              .attr('stroke', theme.palette.divider)
+              .attr('rx', 4);
+
+            tooltip.append('text')
+              .attr('x', xScale(x) + 15)
+              .attr('y', yScale(y) - 12)
+              .text(`(${x.toFixed(2)}, ${y.toFixed(2)})`)
+              .style('fill', theme.palette.text.primary);
+
+            point
+              .on('mouseover', () => {
+                tooltip.transition()
+                  .duration(200)
+                  .style('opacity', 1);
+              })
+              .on('mouseout', () => {
+                tooltip.transition()
+                  .duration(200)
+                  .style('opacity', 0);
+              });
+          }
+        });
+      }
+
+      // Agregar la ecuación al historial
+      if (onAddToHistory && typeof onAddToHistory === 'function') {
+        try {
+          const operationString = typeof equation === 'object' 
+            ? JSON.stringify(equation)
+            : equation.toString();
+          
+          onAddToHistory({
+            operation: operationString,
+            type: 'graph',
+            timestamp: new Date().toISOString(),
+            isFavorite: false
+          });
+        } catch (error) {
+          console.error('Error al agregar al historial:', error);
+        }
+      }
+
+      if (showGuideLines && selectedPoint) {
+        const [x, y] = selectedPoint;
+        
+        // Línea vertical
+        zoomGroup.append('line')
+          .attr('class', 'guide-line')
+          .attr('x1', xScale(x))
+          .attr('y1', 0)
+          .attr('x2', xScale(x))
+          .attr('y2', innerHeight)
+          .style('stroke', theme.palette.primary.main)
+          .style('stroke-dasharray', '4,4')
+          .style('stroke-width', 1)
+          .style('opacity', 0.5);
+
+        // Línea horizontal
+        zoomGroup.append('line')
+          .attr('class', 'guide-line')
+          .attr('x1', 0)
+          .attr('y1', yScale(y))
+          .attr('x2', innerWidth)
+          .attr('y2', yScale(y))
+          .style('stroke', theme.palette.primary.main)
+          .style('stroke-dasharray', '4,4')
+          .style('stroke-width', 1)
+          .style('opacity', 0.5);
+      }
+
+    } catch (error) {
+      console.error('Error al procesar la ecuación:', error);
+    }
   }, [equation, solutions, theme, zoom, showGrid, showAxis, showPoints, dimensions, isMobile, onAddToHistory]);
+
+  useEffect(() => {
+    if (onMenuOpenChange) {
+      onMenuOpenChange(mobileMenuOpen);
+    }
+  }, [mobileMenuOpen, onMenuOpenChange]);
 
   return (
     <Paper 
-      elevation={3} 
-      sx={{ 
-        p: 2,
-        mt: 2, 
-        backgroundColor: 'background.paper',
-        position: 'relative',
-        height: isMobile ? '85vh' : 'auto',
-        overflow: 'hidden'
-      }}
       ref={containerRef}
-    >
-      {/* Controles de escritorio */}
-      {!isMobile && (
-        <Box sx={{ 
-          display: 'flex', 
-          gap: 1, 
-          mb: 2,
-          alignItems: 'center'
-        }}>
-          <Typography variant="h6">
-            Representación gráfica
-          </Typography>
-
-          <Box sx={{ 
-            display: 'flex', 
-            gap: 1,
-            flexWrap: 'wrap',
-            justifyContent: 'flex-end',
-            flex: 1
-          }}>
-            <ButtonGroup size={isMobile ? "medium" : "small"} 
-                        orientation={isMobile ? "horizontal" : "horizontal"}>
-              <Tooltip title="Aumentar zoom">
-                <IconButton onClick={() => handleZoom('in')}>
-                  <ZoomInIcon />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="Reducir zoom">
-                <IconButton onClick={() => handleZoom('out')}>
-                  <ZoomOutIcon />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="Restaurar zoom">
-                <IconButton onClick={() => handleZoom('reset')}>
-                  <RestoreIcon />
-                </IconButton>
-              </Tooltip>
-            </ButtonGroup>
-
-            <ButtonGroup size={isMobile ? "medium" : "small"}>
-              <Tooltip title="Mostrar/Ocultar cuadrícula">
-                <IconButton onClick={() => setShowGrid(!showGrid)}>
-                  <GridOnIcon />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="Mostrar/Ocultar ejes">
-                <IconButton onClick={() => setShowAxis(!showAxis)}>
-                  <StraightIcon />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="Mostrar/Ocultar puntos">
-                <IconButton onClick={() => setShowPoints(!showPoints)}>
-                  <ScatterPlotIcon />
-                </IconButton>
-              </Tooltip>
-            </ButtonGroup>
-
-            <ButtonGroup size={isMobile ? "medium" : "small"}>
-              <Tooltip title="Descargar SVG">
-                <IconButton onClick={handleDownload}>
-                  <DownloadIcon />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="Descargar PNG">
-                <IconButton onClick={handleDownloadPNG}>
-                  <ImageIcon />
-                </IconButton>
-              </Tooltip>
-            </ButtonGroup>
-          </Box>
-        </Box>
-      )}
-
-      {/* Contenedor del gráfico */}
-      <Box sx={{ 
-        overflow: 'hidden',
-        display: 'flex',
-        justifyContent: 'center',
-        position: 'relative',
-        touchAction: 'none',
+      elevation={0}
+      sx={{ 
         height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'relative',
+        pb: isMobile ? 12 : 0,
+        borderRadius: 2,
+        overflow: 'hidden',
+        bgcolor: 'background.paper',
         '& svg': {
-          maxWidth: '100%',
-          height: '100%',
-          cursor: 'grab',
-          '&:active': {
-            cursor: 'grabbing'
-          }
+          touchAction: 'none',
+          userSelect: 'none'
         }
+      }}
+    >
+      {/* Área del gráfico */}
+      <Box sx={{ 
+        flex: 1,
+        overflow: 'hidden',
+        touchAction: 'none'
       }}>
         <svg
           ref={svgRef}
           width={dimensions.width}
           height={dimensions.height}
           style={{
-            backgroundColor: theme.palette.background.default
+            backgroundColor: theme.palette.background.default,
+            maxWidth: '100%',
+            height: '100%'
           }}
         />
       </Box>
 
-      {/* Solo el botón móvil */}
+      {/* Controles específicos para móvil/desktop */}
+      {isMobile ? <MobileControls /> : <DesktopControls />}
+
+      {/* Botón flotante para móvil */}
       {isMobile && (
         <IconButton
           sx={{
             position: 'absolute',
-            bottom: 16,
+            bottom: showCalculatorButtons ? 80 : 16,
             right: 16,
-            width: 48,
-            height: 48,
-            bgcolor: theme.palette.primary.main,
+            bgcolor: 'primary.main',
             color: 'white',
-            '&:hover': { bgcolor: theme.palette.primary.dark },
-            zIndex: theme.zIndex.drawer + 1,
-            boxShadow: theme.shadows[4]
+            '&:hover': {
+              bgcolor: 'primary.dark'
+            },
+            zIndex: 1300
           }}
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
         >
-          <MenuIcon />
+          {mobileMenuOpen ? <CloseIcon /> : <MenuIcon />}
         </IconButton>
       )}
-
-      {/* Solo los controles móviles */}
-      <Controls />
     </Paper>
   );
 };

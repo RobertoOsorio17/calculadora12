@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, memo } from 'react';
+import React, { useState, useMemo, useEffect, memo, forwardRef } from 'react';
 import {
   Box,
   Drawer,
@@ -47,7 +47,7 @@ import {
   ContentCopy as CopyIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
-  FilterList as FilterIcon,
+  FilterList as FilterListIcon,
   Today as TodayIcon,
   DateRange as DateRangeIcon,
   FileDownload as FileDownloadIcon,
@@ -61,9 +61,11 @@ import {
   ArrowDownward as ArrowDownwardIcon,
   Calculate as CalculatorIcon,
   Timeline as TimelineIcon,
-  Assignment as AssignmentIcon
+  Assignment as AssignmentIcon,
+  Restore as RestoreIcon
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
+import { styled } from '@mui/material/styles';
 
 const HistoryDrawer = memo(({ 
   open, 
@@ -76,28 +78,44 @@ const HistoryDrawer = memo(({
   onImportData 
 }) => {
   const theme = useTheme();
+  
+  // Estados básicos
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState(0);
-  const [showFilters, setShowFilters] = useState(false);
-  const [exportAnchorEl, setExportAnchorEl] = useState(null);
-  const [showExportModal, setShowExportModal] = useState(false);
-  const [showImportModal, setShowImportModal] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [selectedOperations, setSelectedOperations] = useState([]);
   const [error, setError] = useState(null);
+  
+  // Estados de visualización
+  const [viewMode, setViewMode] = useState('list');
+  const [sortBy, setSortBy] = useState('date');
+  const [sortOrder, setSortOrder] = useState('desc');
+  
+  // Estados de filtros
+  const [filters, setFilters] = useState({
+    basic: true,
+    scientific: true,
+    graph: true,
+    equation: true
+  });
+  
+  // Estados de modales y menús
+  const [filterAnchorEl, setFilterAnchorEl] = useState(null);
+  const [sortAnchorEl, setSortAnchorEl] = useState(null);
+  const [exportAnchorEl, setExportAnchorEl] = useState(null);
+  const [anchorEl, setAnchorEl] = useState(null);
+  const [showFilters, setShowFilters] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
+  
+  // Configuración de exportación
   const [exportConfig, setExportConfig] = useState({
     format: 'csv',
     includeDate: true,
     includeFavorites: true,
     includeType: true
   });
-
-  // Nuevos estados
-  const [viewMode, setViewMode] = useState('list'); // 'list' o 'grid'
-  const [sortBy, setSortBy] = useState('date'); // 'date', 'type', 'favorite'
-  const [sortOrder, setSortOrder] = useState('desc'); // 'asc' o 'desc'
-  const [anchorEl, setAnchorEl] = useState(null);
-  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
 
   // Primero definimos las opciones de tabs (después de los estados)
   const tabs = [
@@ -110,71 +128,76 @@ const HistoryDrawer = memo(({
 
   // Función para determinar el color segn el tipo de operación
   const getTypeColor = (type) => {
-    switch (type) {
-      case 'scientific':
-        return 'secondary';
-      case 'equation':
-        return 'info';
-      case 'graph':
-        return 'warning';
-      case 'basic':
-        return 'primary';
-      default:
-        return 'default';
+    // Asegurarnos de que type sea un string válido
+    if (!type || typeof type !== 'string') {
+      return {
+        color: 'default',
+        variant: 'outlined'
+      };
     }
+
+    const typeColors = {
+      scientific: {
+        color: 'secondary',
+        variant: 'outlined'
+      },
+      equation: {
+        color: 'info',
+        variant: 'filled'
+      },
+      graph: {
+        color: 'warning',
+        variant: 'outlined'
+      },
+      advanced: {
+        color: 'success',
+        variant: 'filled'
+      },
+      basic: {
+        color: 'primary',
+        variant: 'outlined'
+      }
+    };
+
+    return typeColors[type] || typeColors.basic;
   };
 
   // Memoizar la lista filtrada
   const filteredHistory = useMemo(() => {
     let filtered = [...history];
     
-    // Aplicar búsqueda y filtros existentes
+    // Aplicar filtros activos
+    filtered = filtered.filter(op => filters[op.type]);
+    
+    // Aplicar búsqueda
     if (searchTerm) {
       filtered = filtered.filter(op => 
         op.operation.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
     
-    // Aplicar ordenación
-    filtered.sort((a, b) => {
-      switch (sortBy) {
-        case 'date':
-          return sortOrder === 'desc' 
-            ? new Date(b.date) - new Date(a.date)
-            : new Date(a.date) - new Date(b.date);
-        case 'type':
-          return sortOrder === 'desc'
-            ? b.type.localeCompare(a.type)
-            : a.type.localeCompare(b.type);
-        case 'favorite':
-          return sortOrder === 'desc'
-            ? (b.isFavorite ? 1 : -1) - (a.isFavorite ? 1 : -1)
-            : (a.isFavorite ? 1 : -1) - (b.isFavorite ? 1 : -1);
-        default:
-          return 0;
-      }
-    });
-
-    // Aplicar filtros de pestañas
-    switch (activeTab) {
-      case 1: 
-        filtered = filtered.filter(op => op.isFavorite);
-        break;
-      case 2:
-        filtered = filtered.filter(op => op.type === 'scientific');
-        break;
-      case 3:
-        filtered = filtered.filter(op => op.type === 'basic');
-        break;
-      case 4:
-        filtered = filtered.filter(op => op.type === 'graph');
-        break;
-      default:
-        break;
+    // Aplicar filtros de pestaña
+    if (activeTab !== 0) {
+      const tabFilters = {
+        1: op => op.isFavorite,
+        2: op => op.type === 'scientific',
+        3: op => op.type === 'basic',
+        4: op => op.type === 'graph'
+      };
+      filtered = filtered.filter(tabFilters[activeTab] || (() => true));
     }
     
+    // Aplicar ordenación
+    const sortFunctions = {
+      date: (a, b) => new Date(sortOrder === 'desc' ? b.date : a.date) - new Date(sortOrder === 'desc' ? a.date : b.date),
+      type: (a, b) => sortOrder === 'desc' ? b.type.localeCompare(a.type) : a.type.localeCompare(b.type),
+      favorite: (a, b) => sortOrder === 'desc' ? (b.isFavorite - a.isFavorite) : (a.isFavorite - b.isFavorite)
+    };
+    
+    filtered.sort(sortFunctions[sortBy] || sortFunctions.date);
+    
     return filtered;
-  }, [history, searchTerm, activeTab, sortBy, sortOrder]);
+  }, [history, searchTerm, activeTab, sortBy, sortOrder, filters]);
 
   // Limpiar estados al cerrar
   useEffect(() => {
@@ -183,11 +206,14 @@ const HistoryDrawer = memo(({
       setActiveTab(0);
       setIsEditMode(false);
       setSelectedOperations([]);
-      setShowFilters(false);
+      setFilterAnchorEl(null);
+      setSortAnchorEl(null);
       setExportAnchorEl(null);
+      setAnchorEl(null);
+      setShowFilters(false);
       setShowExportModal(false);
       setShowImportModal(false);
-      setAnchorEl(null);
+      setShowDeleteConfirmModal(false);
       setError(null);
     }
   }, [open]);
@@ -230,72 +256,25 @@ const HistoryDrawer = memo(({
     setShowExportModal(false);
   };
 
-  const handleImport = async (event) => {
-    try {
-      const file = event.target.files[0];
-      if (!file) {
-        handleError('No se seleccionó ningún archivo');
-        return;
-      }
-
-      if (!file.name.endsWith('.csv') && !file.name.endsWith('.json')) {
-        handleError('Formato de archivo no válido');
-        return;
-      }
-
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        try {
-          let importedData;
-          if (file.name.endsWith('.csv')) {
-            const text = e.target.result;
-            const lines = text.split('\n').filter(line => line.trim());
-            const headers = lines[0].split(',');
-            
-            if (lines.length < 2) {
-              throw new Error('El archivo CSV está vacío o no tiene el formato correcto');
-            }
-            
-            importedData = lines.slice(1).map(line => {
-              const values = line.split(',');
-              if (values.length < 1) {
-                throw new Error('Línea de CSV inválida');
-              }
-              return {
-                operation: values[0],
-                date: new Date(),
-                isFavorite: values.includes('Sí'),
-                type: values[values.length - 1] || 'basic'
-              };
-            });
-          } else {
-            // Procesar JSON
-            importedData = JSON.parse(e.target.result);
-          }
-          onImportData(importedData);
-          setShowImportModal(false);
-        } catch (error) {
-          handleError('Error al procesar el archivo');
-          console.error('Error en importación:', error);
-        }
-      };
-      reader.readAsText(file);
-    } catch (err) {
-      handleError('Error al procesar el archivo');
-      console.error('Error en importación:', err);
+  const handleImport = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      onImportData(file);
+      setShowImportModal(false);
     }
   };
 
   const downloadFile = (content, filename, type) => {
     const blob = new Blob([content], { type });
-    const url = URL.createObjectURL(blob);
+    const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
     link.download = filename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    window.URL.revokeObjectURL(url);
+    setShowExportModal(false);
   };
 
   const getOperationTypeChip = (type) => {
@@ -343,86 +322,108 @@ const HistoryDrawer = memo(({
     }
   };
 
-  const renderOperation = (op, index) => (
-    <ListItem
-      key={index}
-      onClick={(e) => {
-        e.stopPropagation();
-        if (!isEditMode) {
-          onSelectOperation(op);
-        }
-      }}
-      sx={{
-        cursor: isEditMode ? 'default' : 'pointer',
-        '&:hover': {
-          bgcolor: isEditMode ? 'transparent' : 'action.hover'
-        }
-      }}
+  const OperationItem = memo(({ 
+    operation, 
+    index,
+    isEditMode,
+    selectedOperations,
+    onSelect,
+    onDelete,
+    onToggleFavorite,
+    onCopy 
+  }) => (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
     >
-      <Box sx={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        {isEditMode && (
-          <Box onClick={e => e.stopPropagation()}>
-            <Checkbox
-              checked={selectedOperations.includes(index)}
-              onChange={(e) => {
-                if (e.target.checked) {
-                  setSelectedOperations(prev => [...prev, index]);
-                } else {
-                  setSelectedOperations(prev => prev.filter(i => i !== index));
-                }
-              }}
-              sx={{ p: 1 }}
-            />
-          </Box>
-        )}
-        <ListItemText 
-          primary={op.operation}
-          secondary={
-            <Typography component="div" variant="body2" color="text.secondary">
-              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mt: 0.5 }}>
-                <Typography variant="caption" color="text.secondary">
-                  {new Date(op.date).toLocaleTimeString()}
-                </Typography>
-                <Chip 
-                  label={op.type} 
-                  size="small" 
-                  color={getTypeColor(op.type)}
-                  sx={{ height: 20 }}
-                />
-              </Box>
-            </Typography>
+      <Paper
+        elevation={1}
+        sx={{
+          p: 2,
+          mb: 1,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          position: 'relative',
+          cursor: 'pointer',
+          '&:hover': {
+            bgcolor: 'action.hover',
+            '& .operation-actions': {
+              opacity: 1
+            }
           }
-        />
-        <Box sx={{ display: 'flex', gap: 0.5 }} onClick={e => e.stopPropagation()}>
+        }}
+      >
+        {isEditMode && (
+          <Checkbox
+            checked={selectedOperations.includes(index)}
+            onChange={() => onSelect(index)}
+          />
+        )}
+        
+        <Box sx={{ flexGrow: 1 }}>
+          <Typography variant="body1">
+            {operation.operation}
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            {new Date(operation.date).toLocaleString()}
+          </Typography>
+        </Box>
+
+        <Box 
+          className="operation-actions"
+          sx={{ 
+            opacity: { xs: 1, sm: 0 },
+            transition: 'opacity 0.2s',
+            display: 'flex',
+            gap: 1
+          }}
+        >
           <IconButton
             size="small"
             onClick={(e) => {
+              e.stopPropagation();
               onToggleFavorite(index);
             }}
           >
-            {op.isFavorite ? <StarIcon color="warning" /> : <StarBorderIcon />}
+            {operation.isFavorite ? <StarIcon color="warning" /> : <StarBorderIcon />}
           </IconButton>
+          
           <IconButton
             size="small"
             onClick={(e) => {
-              onCopyResult(op);
+              e.stopPropagation();
+              onCopy(operation);
             }}
           >
             <CopyIcon />
           </IconButton>
+          
           <IconButton
             size="small"
-            onClick={(e) => {
-              onDeleteOperation([index]);
-            }}
             color="error"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(index);
+            }}
           >
             <DeleteIcon />
           </IconButton>
         </Box>
-      </Box>
-    </ListItem>
-  );
+        
+        <Chip
+          size="small"
+          label={operation.type || 'basic'}
+          color={getTypeColor(operation.type).color}
+          variant={getTypeColor(operation.type).variant}
+          sx={{ position: 'absolute', top: 8, right: 8 }}
+        />
+      </Paper>
+    </motion.div>
+  ));
 
   // Función para manejar el borrado con confirmación
   const handleDeleteAll = () => {
@@ -430,7 +431,7 @@ const HistoryDrawer = memo(({
   };
 
   const handleConfirmDelete = () => {
-    onDeleteOperation('all');
+    onDeleteOperation(filteredHistory.map((_, index) => index));
     setShowDeleteConfirmModal(false);
   };
 
@@ -444,323 +445,360 @@ const HistoryDrawer = memo(({
     }
   };
 
+  const FilterMenu = memo(({ anchorEl, onClose, filters, onFilterChange }) => (
+    <Menu
+      anchorEl={anchorEl}
+      open={Boolean(anchorEl)}
+      onClose={onClose}
+    >
+      <MenuItem onClick={() => onFilterChange('basic')}>
+        <ListItemIcon>
+          <Checkbox checked={filters.basic} />
+        </ListItemIcon>
+        <ListItemText primary="Operaciones básicas" />
+      </MenuItem>
+      <MenuItem onClick={() => onFilterChange('scientific')}>
+        <ListItemIcon>
+          <Checkbox checked={filters.scientific} />
+        </ListItemIcon>
+        <ListItemText primary="Científicas" />
+      </MenuItem>
+      <MenuItem onClick={() => onFilterChange('graph')}>
+        <ListItemIcon>
+          <Checkbox checked={filters.graph} />
+        </ListItemIcon>
+        <ListItemText primary="Gráficos" />
+      </MenuItem>
+      <MenuItem onClick={() => onFilterChange('equation')}>
+        <ListItemIcon>
+          <Checkbox checked={filters.equation} />
+        </ListItemIcon>
+        <ListItemText primary="Ecuaciones" />
+      </MenuItem>
+    </Menu>
+  ));
+
+  const SortMenu = memo(({ anchorEl, onClose, sortBy, sortOrder, onSortChange }) => (
+    <Menu
+      anchorEl={anchorEl}
+      open={Boolean(anchorEl)}
+      onClose={onClose}
+    >
+      <MenuItem onClick={() => onSortChange('date')}>
+        <ListItemIcon>
+          {sortBy === 'date' && (
+            sortOrder === 'asc' ? <ArrowUpwardIcon /> : <ArrowDownwardIcon />
+          )}
+        </ListItemIcon>
+        <ListItemText primary="Fecha" />
+      </MenuItem>
+      <MenuItem onClick={() => onSortChange('type')}>
+        <ListItemIcon>
+          {sortBy === 'type' && (
+            sortOrder === 'asc' ? <ArrowUpwardIcon /> : <ArrowDownwardIcon />
+          )}
+        </ListItemIcon>
+        <ListItemText primary="Tipo" />
+      </MenuItem>
+      <MenuItem onClick={() => onSortChange('favorite')}>
+        <ListItemIcon>
+          {sortBy === 'favorite' && (
+            sortOrder === 'asc' ? <ArrowUpwardIcon /> : <ArrowDownwardIcon />
+          )}
+        </ListItemIcon>
+        <ListItemText primary="Favorito" />
+      </MenuItem>
+    </Menu>
+  ));
+
+  const handleSortClick = (event) => {
+    setAnchorEl(event.currentTarget);
+  };
+
+  const handleFilterClick = (event) => {
+    setFilterAnchorEl(event.currentTarget);
+  };
+
+  const handleClose = () => {
+    setAnchorEl(null);
+    setFilterAnchorEl(null);
+    setExportAnchorEl(null);
+  };
+
+  // Manejadores de eventos
+  const handleDeleteOperation = (index) => {
+    if (isEditMode && selectedOperations.length > 0) {
+      onDeleteOperation(selectedOperations);
+      setSelectedOperations([]);
+    } else {
+      onDeleteOperation([index]);
+    }
+  };
+
+  const handleToggleFavorite = (index) => {
+    onToggleFavorite(index);
+  };
+
+  const handleCopyResult = (operation) => {
+    onCopyResult(operation);
+  };
+
+  const Header = memo(() => {
+    const hasSelectedOperations = selectedOperations.length > 0;
+    
+    return (
+      <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
+        <Box sx={{ 
+          display: 'flex', 
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          mb: 2
+        }}>
+          <Typography variant="h6" component="div">
+            {isEditMode && hasSelectedOperations ? 
+              `${selectedOperations.length} seleccionados` :
+              <>
+                Historial
+                <Typography component="span" variant="caption" sx={{ ml: 1, color: 'text.secondary' }}>
+                  ({filteredHistory.length} operaciones)
+                </Typography>
+              </>
+            }
+          </Typography>
+          <IconButton onClick={onClose} size="small">
+            <CloseIcon />
+          </IconButton>
+        </Box>
+
+        <Box sx={{ 
+          display: 'flex', 
+          gap: 1,
+          flexWrap: 'wrap',
+          mb: 2
+        }}>
+          <Button
+            startIcon={<FileUploadIcon />}
+            onClick={() => setShowImportModal(true)}
+            variant="outlined"
+            size="small"
+            sx={{ flex: { xs: '1 1 auto', sm: '0 1 auto' } }}
+          >
+            Importar
+          </Button>
+          <Button
+            startIcon={<FileDownloadIcon />}
+            onClick={() => setShowExportModal(true)}
+            variant="outlined"
+            size="small"
+            sx={{ flex: { xs: '1 1 auto', sm: '0 1 auto' } }}
+          >
+            Exportar
+          </Button>
+          <Button
+            startIcon={isEditMode && hasSelectedOperations ? <DeleteIcon /> : <EditIcon />}
+            onClick={() => {
+              if (isEditMode && hasSelectedOperations) {
+                handleDeleteOperation(selectedOperations);
+                setSelectedOperations([]);
+              } else {
+                setIsEditMode(!isEditMode);
+              }
+            }}
+            variant="outlined"
+            color={isEditMode && hasSelectedOperations ? "error" : "primary"}
+            size="small"
+            sx={{ flex: { xs: '1 1 auto', sm: '0 1 auto' } }}
+          >
+            {isEditMode ? 
+              (hasSelectedOperations ? 'Eliminar' : 'Listo') : 
+              'Editar'
+            }
+          </Button>
+          {!isEditMode && (
+            <Button
+              startIcon={<DeleteIcon />}
+              onClick={() => setShowDeleteConfirmModal(true)}
+              variant="outlined"
+              color="error"
+              size="small"
+              sx={{ 
+                flex: { xs: '1 1 100%', sm: '0 1 auto' },
+                order: { xs: 1, sm: 0 }
+              }}
+            >
+              Vaciar
+            </Button>
+          )}
+        </Box>
+
+        <TextField
+          fullWidth
+          size="small"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          placeholder="Buscar operaciones..."
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon />
+              </InputAdornment>
+            ),
+            endAdornment: searchTerm && (
+              <InputAdornment position="end">
+                <IconButton size="small" onClick={() => setSearchTerm('')}>
+                  <CloseIcon />
+                </IconButton>
+              </InputAdornment>
+            )
+          }}
+        />
+      </Box>
+    );
+  });
+
+  // Definir el componente TabPanel
+  const TabPanel = memo(({ value, index, children }) => (
+    <Box
+      role="tabpanel"
+      hidden={value !== index}
+      sx={{ flex: 1, overflow: 'auto' }}
+    >
+      {value === index && children}
+    </Box>
+  ));
+
+  // Modificar el estilo de las tabs
+  const StyledTabs = styled(Tabs)(({ theme }) => ({
+    borderBottom: `1px solid ${theme.palette.divider}`,
+    '& .MuiTab-root': {
+      color: theme.palette.text.primary,
+      '&.Mui-selected': {
+        color: theme.palette.primary.main,
+      },
+    },
+    '& .MuiTabs-indicator': {
+      backgroundColor: theme.palette.primary.main,
+    }
+  }));
+
   return (
     <Drawer
       anchor="right"
       open={open}
       onClose={onClose}
-      PaperProps={{
-        sx: { 
+      sx={{
+        '& .MuiDrawer-paper': {
           width: { xs: '100%', sm: 400 },
-          height: '100%',
+          maxWidth: '100%',
           display: 'flex',
           flexDirection: 'column'
         }
       }}
     >
       <Box sx={{ 
-        height: '100%', 
-        display: 'flex', 
+        display: 'flex',
         flexDirection: 'column',
-        position: 'relative'
+        height: '100%'
       }}>
-        {/* Header mejorado con opciones de vista */}
-        <Box sx={{ 
-          p: 2, 
-          borderBottom: 1,
-          borderColor: 'divider',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1
-        }}>
-          <Typography variant="h6" sx={{ flexGrow: 1 }}>
-            Historial
-            <Typography component="span" variant="caption" sx={{ ml: 1, color: 'text.secondary' }}>
-              ({filteredHistory.length} operaciones)
-            </Typography>
-          </Typography>
-          
-          <Tooltip title="Cambiar vista">
-            <IconButton 
-              size="small"
-              onClick={() => setViewMode(prev => prev === 'list' ? 'grid' : 'list')}
-            >
-              {viewMode === 'list' ? <ViewListIcon /> : <ViewModuleIcon />}
-            </IconButton>
-          </Tooltip>
+        {/* Header */}
+        <Header />
 
-          <Tooltip title="Ordenar por">
-            <IconButton
-              size="small"
-              onClick={(e) => setAnchorEl(e.currentTarget)}
-            >
-              <SortIcon />
-            </IconButton>
-          </Tooltip>
-          
-          <IconButton onClick={onClose}>
-            <CloseIcon />
-          </IconButton>
+        {/* Tabs */}
+        <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+          <StyledTabs 
+            value={activeTab} 
+            onChange={(_, newValue) => setActiveTab(newValue)}
+            variant="scrollable"
+            scrollButtons="auto"
+          >
+            {tabs.map((tab, index) => (
+              <Tab
+                key={index}
+                icon={tab.icon}
+                label={tab.label}
+                sx={{
+                  minHeight: 48,
+                  textTransform: 'none',
+                  fontSize: '0.875rem',
+                  fontWeight: 'medium'
+                }}
+              />
+            ))}
+          </StyledTabs>
         </Box>
 
-        {/* Menú de ordenación */}
-        <Menu
-          anchorEl={anchorEl}
-          open={Boolean(anchorEl)}
-          onClose={() => setAnchorEl(null)}
-        >
-          <MenuItem onClick={() => setSortBy('date')}>
-            <ListItemIcon>
-              {sortBy === 'date' && <CheckIcon />}
-            </ListItemIcon>
-            Fecha
-          </MenuItem>
-          <MenuItem onClick={() => setSortBy('type')}>
-            <ListItemIcon>
-              {sortBy === 'type' && <CheckIcon />}
-            </ListItemIcon>
-            Tipo
-          </MenuItem>
-          <MenuItem onClick={() => setSortBy('favorite')}>
-            <ListItemIcon>
-              {sortBy === 'favorite' && <CheckIcon />}
-            </ListItemIcon>
-            Favoritos
-          </MenuItem>
-          <Divider />
-          <MenuItem onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}>
-            <ListItemIcon>
-              {sortOrder === 'asc' ? <ArrowUpwardIcon /> : <ArrowDownwardIcon />}
-            </ListItemIcon>
-            {sortOrder === 'asc' ? 'Ascendente' : 'Descendente'}
-          </MenuItem>
-        </Menu>
-
-        {/* Vista de cuadrícula para móvil */}
-        {viewMode === 'grid' ? (
-          <Box sx={{ p: 2, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 2 }}>
-            {filteredHistory.map((op, index) => (
-              <Paper
-                key={index}
-                elevation={2}
-                sx={{
-                  p: 2,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 1,
-                  position: 'relative',
-                  cursor: 'pointer',
-                  '&:hover': { bgcolor: 'action.hover' }
-                }}
-                onClick={() => onSelectOperation(op)}
-              >
-                {isEditMode && (
-                  <Checkbox
-                    checked={selectedOperations.includes(index)}
-                    onChange={(e) => {
-                      e.stopPropagation();
-                      if (e.target.checked) {
-                        setSelectedOperations(prev => [...prev, index]);
-                      } else {
-                        setSelectedOperations(prev => prev.filter(i => i !== index));
-                      }
-                    }}
-                    sx={{ position: 'absolute', top: 0, right: 0 }}
-                  />
-                )}
-                <Typography noWrap>{op.operation}</Typography>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <Chip 
-                    label={op.type}
-                    size="small"
-                    color={getTypeColor(op.type)}
-                  />
-                  {op.isFavorite && <StarIcon color="warning" fontSize="small" />}
-                </Box>
-                <Typography variant="caption" color="text.secondary">
-                  {formatDate(op.date)}
-                </Typography>
-              </Paper>
-            ))}
-          </Box>
-        ) : (
-          // Vista de lista existente
-          <List>
-            <AnimatePresence>
-              {filteredHistory.length > 0 ? (
-                filteredHistory.map((op, index) => (
-                  <motion.div
-                    key={`${op.date}-${index}`}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20 }}
-                    transition={{ duration: 0.2, delay: index * 0.05 }}
-                  >
-                    {renderOperation(op, index)}
-                  </motion.div>
-                ))
-              ) : (
-                <Box sx={{
-                  height: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexDirection: 'column',
-                  opacity: 0.5
-                }}>
-                  <Typography variant="body1" color="text.secondary">
-                    No hay operaciones
-                  </Typography>
-                </Box>
-              )}
-            </AnimatePresence>
-          </List>
-        )}
-
-        {/* Botón flotante para móvil */}
-        <SpeedDial
-          ariaLabel="Opciones del historial"
-          sx={{ 
-            position: 'absolute',
-            bottom: 80,
-            right: 16,
-            zIndex: theme.zIndex.speedDial,
-            '& .MuiSpeedDial-fab': {
-              bgcolor: theme.palette.primary.main,
-              '&:hover': {
-                bgcolor: theme.palette.primary.dark,
-              }
-            },
-            '& .MuiSpeedDialAction-fab': {
-              bgcolor: theme.palette.background.paper,
-              color: theme.palette.text.primary,
-              boxShadow: theme.shadows[2],
-              '&:hover': {
-                bgcolor: theme.palette.action.hover,
-                boxShadow: theme.shadows[4]
-              }
-            }
-          }}
-          icon={<SpeedDialIcon />}
-          FabProps={{ 
-            size: 'medium',
-            sx: { 
-              boxShadow: theme.shadows[3],
-              '&:hover': {
-                boxShadow: theme.shadows[6]
-              }
-            }
-          }}
-        >
-          <SpeedDialAction
-            icon={viewMode === 'list' ? <ViewModuleIcon /> : <ViewListIcon />}
-            tooltipTitle="Cambiar vista"
-            tooltipOpen={false}
-            sx={{ 
-              '&:hover': {
-                transform: 'scale(1.05)',
-                transition: 'transform 0.2s'
-              }
-            }}
-            onClick={() => setViewMode(prev => prev === 'list' ? 'grid' : 'list')}
-          />
-          <SpeedDialAction
-            icon={<SortIcon />}
-            tooltipTitle="Ordenar"
-            tooltipOpen={false}
-            sx={{ 
-              '&:hover': {
-                transform: 'scale(1.05)',
-                transition: 'transform 0.2s'
-              }
-            }}
-            onClick={(e) => setAnchorEl(e.currentTarget)}
-          />
-          {filteredHistory.length > 0 && (
-            <SpeedDialAction
-              icon={<FileDownloadIcon />}
-              tooltipTitle="Exportar"
-              tooltipOpen={false}
-              sx={{ 
-                '&:hover': {
-                  transform: 'scale(1.05)',
-                  transition: 'transform 0.2s'
-                }
-              }}
-              onClick={() => setShowExportModal(true)}
-            />
-          )}
-        </SpeedDial>
-
-        {/* Contenido principal con scroll */}
-        <Box sx={{ 
-          flex: 1,
-          overflowY: 'auto',
-          pb: '80px'
-        }}>
-          <Box sx={{ 
-            display: 'flex', 
-            gap: 1, 
-            p: 2,
-            borderBottom: `1px solid ${theme.palette.divider}`,
-            flexWrap: 'wrap',
-            justifyContent: 'center'
-          }}>
-            <Button
-              variant="contained"
-              startIcon={<FileUploadIcon />}
-              onClick={() => setShowImportModal(true)}
-              size="small"
-            >
-              Importar
-            </Button>
-            {filteredHistory.length > 0 && (
-              <>
-                <Button
-                  variant="contained"
-                  startIcon={<FileDownloadIcon />}
-                  onClick={() => setShowExportModal(true)}
-                  size="small"
-                >
-                  Exportar
-                </Button>
-                <Button
-                  variant="outlined"
-                  color="error"
-                  startIcon={<DeleteIcon />}
-                  onClick={handleDeleteAll}
-                  size="small"
-                >
-                  Vaciar
-                </Button>
-                <Button
-                  variant="outlined"
-                  startIcon={isEditMode ? (selectedOperations.length > 0 ? <DeleteIcon /> : <CloseIcon />) : <EditIcon />}
-                  onClick={() => {
-                    if (isEditMode) {
-                      if (selectedOperations.length > 0) {
-                        // Llamar a onDeleteOperation con los índices seleccionados
-                        onDeleteOperation(selectedOperations);
-                        setSelectedOperations([]);
-                      }
-                      setIsEditMode(false);
-                    } else {
-                      setIsEditMode(true);
-                    }
+        {/* Lista de operaciones */}
+        <Box sx={{ flexGrow: 1, overflow: 'auto', p: 2 }}>
+          {filteredHistory.length === 0 ? (
+            <Box sx={{ 
+              display: 'flex', 
+              flexDirection: 'column', 
+              alignItems: 'center', 
+              gap: 2,
+              mt: 4 
+            }}>
+              <AssignmentIcon sx={{ fontSize: 48, color: 'text.secondary' }} />
+              <Typography color="text.secondary">
+                No hay operaciones {activeTab !== 0 ? 'en esta categoría' : ''}
+              </Typography>
+            </Box>
+          ) : (
+            <AnimatePresence mode="popLayout">
+              {filteredHistory.map((operation, index) => (
+                <OperationItem
+                  key={operation.id || index}
+                  operation={operation}
+                  index={index}
+                  isEditMode={isEditMode}
+                  selectedOperations={selectedOperations}
+                  onSelect={(idx) => {
+                    setSelectedOperations(prev => 
+                      prev.includes(idx) 
+                        ? prev.filter(i => i !== idx)
+                        : [...prev, idx]
+                    );
                   }}
-                  size="small"
-                >
-                  {isEditMode 
-                    ? selectedOperations.length > 0 
-                      ? 'Eliminar' 
-                      : 'Cancelar'
-                    : 'Editar'}
-                </Button>
-              </>
-            )}
-          </Box>
+                  onDelete={handleDeleteOperation}
+                  onToggleFavorite={handleToggleFavorite}
+                  onCopy={handleCopyResult}
+                />
+              ))}
+            </AnimatePresence>
+          )}
         </Box>
       </Box>
+
+      <SpeedDial
+        ariaLabel="Opciones del historial"
+        sx={{ 
+          position: 'fixed',
+          bottom: { xs: 140, sm: 32 },
+          right: { xs: 16, sm: 32 },
+          zIndex: theme.zIndex.speedDial + 1
+        }}
+        icon={<SpeedDialIcon />}
+      >
+        <SpeedDialAction
+          icon={viewMode === 'list' ? <ViewModuleIcon /> : <ViewListIcon />}
+          tooltipTitle="Cambiar vista"
+          onClick={() => setViewMode(prev => prev === 'list' ? 'grid' : 'list')}
+        />
+        <SpeedDialAction
+          icon={<FilterListIcon />}
+          tooltipTitle="Filtros"
+          onClick={(e) => setFilterAnchorEl(e.currentTarget)}
+        />
+        <SpeedDialAction
+          icon={<SortIcon />}
+          tooltipTitle="Ordenar"
+          onClick={(e) => setSortAnchorEl(e.currentTarget)}
+        />
+        <SpeedDialAction
+          icon={<EditIcon />}
+          tooltipTitle="Modo edición"
+          onClick={() => setIsEditMode(!isEditMode)}
+        />
+      </SpeedDial>
 
       <Dialog open={showExportModal} onClose={() => setShowExportModal(false)}>
         <DialogTitle>Exportar Historial</DialogTitle>
@@ -868,7 +906,6 @@ const HistoryDrawer = memo(({
         }}
       />
 
-      {/* Modal de confirmación para vaciar */}
       <Dialog 
         open={showDeleteConfirmModal} 
         onClose={() => setShowDeleteConfirmModal(false)}
@@ -894,64 +931,6 @@ const HistoryDrawer = memo(({
           </Button>
         </DialogActions>
       </Dialog>
-
-      {/* Añadir el componente de Tabs después del header del drawer */}
-      <Box sx={{ 
-        borderBottom: 1, 
-        borderColor: 'divider',
-        bgcolor: theme.palette.background.paper,
-        position: 'sticky',
-        top: 0,
-        zIndex: 1,
-        width: '100%',
-        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-      }}>
-        <Tabs 
-          value={activeTab}
-          onChange={(_, newValue) => setActiveTab(newValue)}
-          variant="scrollable"
-          scrollButtons={false}
-          allowScrollButtonsMobile
-          sx={{
-            minHeight: 56,
-            '& .MuiTab-root': {
-              minHeight: 56,
-              minWidth: {
-                xs: '20%', // En móviles, dividir el espacio equitativamente
-                sm: 'auto'  // En tablets y desktop, ancho automático
-              },
-              fontSize: {
-                xs: '0.75rem',
-                sm: '0.875rem'
-              },
-              padding: {
-                xs: '6px 12px',
-                sm: '12px 16px'
-              }
-            },
-            '& .MuiTabs-indicator': {
-              height: 3
-            }
-          }}
-        >
-          {tabs.map((tab, index) => (
-            <Tab
-              key={tab.label}
-              label={
-                <Box sx={{ 
-                  display: 'flex', 
-                  flexDirection: { xs: 'column', sm: 'row' },
-                  alignItems: 'center', 
-                  gap: { xs: 0.5, sm: 1 }
-                }}>
-                  {tab.icon}
-                  <span>{tab.label}</span>
-                </Box>
-              }
-            />
-          ))}
-        </Tabs>
-      </Box>
     </Drawer>
   );
 });

@@ -12,7 +12,8 @@ import {
   useTheme,
   Paper,
   Divider,
-  Grid
+  Grid,
+  useMediaQuery
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import FunctionsIcon from '@mui/icons-material/Functions';
@@ -25,14 +26,40 @@ const EquationInput = ({
   onResult, 
   equation, 
   setEquation, 
-  equationButtons 
+  equationButtons,
+  onGraphControlsChange 
 }) => {
   const [error, setError] = useState('');
   const [solution, setSolution] = useState(null);
   const [showGraph, setShowGraph] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const debounceRef = useRef(null);
+  const [showCalculatorButtons, setShowCalculatorButtons] = useState(true);
+
+  const equationExamples = [
+    {
+      type: 'Ecuación lineal',
+      example: '2x + 3 = 10',
+      description: 'Ecuaciones de primer grado'
+    },
+    {
+      type: 'Ecuación cuadrática',
+      example: 'x² + 2x + 1 = 0',
+      description: 'Ecuaciones de segundo grado'
+    },
+    {
+      type: 'Sistema de ecuaciones',
+      example: '2x + y = 5, 3x - y = 1',
+      description: 'Sistemas de ecuaciones lineales'
+    },
+    {
+      type: 'Ecuación con fracciones',
+      example: '(x+1)/2 = 3',
+      description: 'Ecuaciones con términos fraccionarios'
+    }
+  ];
 
   useEffect(() => {
     if (open) {
@@ -56,7 +83,9 @@ const EquationInput = ({
         const solutions = solveEquation(inputValue);
         setSolution(solutions);
         setEquation(inputValue);
-        onResult(formatSolutionForDisplay(solutions));
+        if (JSON.stringify(solutions) !== JSON.stringify(solution)) {
+          onResult(formatSolutionForDisplay(solutions));
+        }
         setError('');
       } catch (error) {
         setError(error.message);
@@ -68,7 +97,15 @@ const EquationInput = ({
         clearTimeout(debounceRef.current);
       }
     };
-  }, [inputValue, onResult, setEquation]);
+  }, [inputValue]);
+
+  useEffect(() => {
+    if (showGraph) {
+      setShowCalculatorButtons(false);
+    } else {
+      setShowCalculatorButtons(true);
+    }
+  }, [showGraph]);
 
   const handleInputChange = (e) => {
     const newValue = e.target.value;
@@ -97,68 +134,106 @@ const EquationInput = ({
     }).join('\n');
   };
 
+  const handleGraphControlsChange = (isOpen) => {
+    setShowCalculatorButtons(!isOpen);
+    if (onGraphControlsChange) {
+      onGraphControlsChange(isOpen);
+    }
+  };
+
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-      <DialogTitle>
+    <Dialog
+      fullScreen={isMobile}
+      open={open}
+      onClose={onClose}
+      maxWidth="md"
+      fullWidth
+      PaperProps={{
+        sx: {
+          height: isMobile ? '100%' : '90vh',
+          display: 'flex',
+          flexDirection: 'column'
+        }
+      }}
+    >
+      <DialogTitle sx={{ 
+        pb: 1,
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center'
+      }}>
         Resolver ecuación
-        <IconButton
-          aria-label="close"
-          onClick={onClose}
-          sx={{ position: 'absolute', right: 8, top: 8 }}
-        >
+        <IconButton onClick={onClose} size="small">
           <CloseIcon />
         </IconButton>
       </DialogTitle>
-      <DialogContent>
+
+      <DialogContent sx={{ 
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 2,
+        p: 3,
+        pb: isMobile ? 10 : 3
+      }}>
         <TextField
           fullWidth
           value={inputValue}
           onChange={handleInputChange}
           error={!!error}
           helperText={error}
-          placeholder="Ejemplos: 2x+3y=7; 4x-y=1"
-          multiline
-          rows={3}
-          sx={{ 
-            mb: 2,
-            '& .MuiInputBase-input::placeholder': {
-              fontFamily: 'monospace',
-              whiteSpace: 'pre-line',
-              fontSize: '0.9rem',
-              opacity: 0.7
+          placeholder="Ejemplo: 2x + 3 = 10"
+          variant="outlined"
+          sx={{
+            '& .MuiInputBase-input': {
+              fontSize: '1.2rem',
+              p: 2
             }
           }}
         />
-        
-        <Grid container spacing={1} sx={{ mb: 2 }}>
-          {equationButtons.map((btn) => (
-            <Grid item xs={4} key={btn.icon}>
-              <Button
-                fullWidth
-                variant="outlined"
-                onClick={() => setEquation(prev => prev + btn.operation)}
+
+        {!solution && (
+          <Box sx={{ 
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' },
+            gap: 2,
+            mt: 2
+          }}>
+            {equationExamples.map((item, index) => (
+              <Paper
+                key={index}
+                elevation={1}
                 sx={{
-                  minHeight: 40,
-                  fontSize: '1.2rem'
+                  p: 2,
+                  cursor: 'pointer',
+                  '&:hover': {
+                    bgcolor: 'action.hover'
+                  }
                 }}
+                onClick={() => setInputValue(item.example)}
               >
-                {btn.icon}
-              </Button>
-            </Grid>
-          ))}
-        </Grid>
+                <Typography variant="subtitle1" color="primary" gutterBottom>
+                  {item.type}
+                </Typography>
+                <Typography variant="body2" color="text.secondary" gutterBottom>
+                  {item.description}
+                </Typography>
+                <Typography 
+                  variant="body1" 
+                  sx={{ 
+                    fontFamily: 'monospace',
+                    mt: 1 
+                  }}
+                >
+                  {item.example}
+                </Typography>
+              </Paper>
+            ))}
+          </Box>
+        )}
 
         {solution && (
-          <>
-            <Paper 
-              elevation={2} 
-              sx={{ 
-                p: 2, 
-                mt: 2, 
-                bgcolor: theme.palette.background.default,
-                position: 'relative'
-              }}
-            >
+          <Box sx={{ flex: 1, overflow: 'auto' }}>
+            <Paper elevation={2} sx={{ p: 2, bgcolor: 'background.default' }}>
               <Typography variant="h6" gutterBottom>
                 Solución:
               </Typography>
@@ -186,43 +261,74 @@ const EquationInput = ({
               )}
             </Paper>
 
-            <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
-              <Button
-                variant="outlined"
-                startIcon={<FunctionsIcon />}
-                onClick={() => setShowGraph(!showGraph)}
-                sx={{ my: 1 }}
-              >
-                {showGraph ? 'Ocultar gráfico' : 'Mostrar gráfico'}
-              </Button>
-            </Box>
+            <Button
+              fullWidth
+              variant="outlined"
+              startIcon={<FunctionsIcon />}
+              onClick={() => setShowGraph(!showGraph)}
+              sx={{ 
+                my: 2,
+                height: 48,
+                borderRadius: 2
+              }}
+            >
+              {showGraph ? 'Ocultar gráfico' : 'Mostrar gráfico'}
+            </Button>
 
             {showGraph && (
-              <EquationGraph 
-                equation={inputValue}
-                solutions={solution}
-              />
+              <Box sx={{ 
+                height: isMobile ? 'calc(100vh - 500px)' : 400,
+                minHeight: 300,
+                position: 'relative'
+              }}>
+                <EquationGraph 
+                  equation={inputValue}
+                  solutions={solution}
+                  onAddToHistory={onResult}
+                  onMenuOpenChange={handleGraphControlsChange}
+                  showCalculatorButtons={showCalculatorButtons}
+                />
+              </Box>
             )}
-          </>
+
+            {solution && showCalculatorButtons && (
+              <Box sx={{ 
+                position: 'fixed',
+                bottom: 0,
+                left: 0,
+                right: 0,
+                bgcolor: 'background.paper',
+                borderTop: 1,
+                borderColor: 'divider',
+                p: 2,
+                zIndex: theme.zIndex.drawer + 2
+              }}>
+                <Grid container spacing={1}>
+                  {equationButtons.map((btn) => (
+                    <Grid item xs={4} key={btn.icon}>
+                      <Button
+                        fullWidth
+                        variant="outlined"
+                        onClick={() => setEquation(prev => prev + btn.operation)}
+                        sx={{
+                          minHeight: 48,
+                          fontSize: '1.2rem',
+                          borderRadius: 2,
+                          '&:active': {
+                            transform: 'scale(0.98)'
+                          }
+                        }}
+                      >
+                        {btn.icon}
+                      </Button>
+                    </Grid>
+                  ))}
+                </Grid>
+              </Box>
+            )}
+          </Box>
         )}
-        
-        <Box sx={{ mt: 3 }}>
-          <Typography variant="subtitle2" color="text.secondary">
-            Tipos de ecuaciones soportadas:
-          </Typography>
-          <ul>
-            <li>Lineales: ax + b = c</li>
-            <li>Cuadráticas: ax² + bx + c = 0</li>
-            <li>Cúbicas: ax³ + bx² + cx + d = 0</li>
-            <li>Valor absoluto: |x| + b = c</li>
-            <li>Raíz cuadrada: √(ax + b) = c</li>
-            <li>Sistemas lineales: 2x + 3y = 7; 4x - y = 1</li>
-          </ul>
-        </Box>
       </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>Cerrar</Button>
-      </DialogActions>
     </Dialog>
   );
 };

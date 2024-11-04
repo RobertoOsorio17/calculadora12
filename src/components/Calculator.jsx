@@ -75,6 +75,7 @@ const Calculator = () => {
   const [memory, setMemory] = useState(null);
   const [lastOperation, setLastOperation] = useState(null);
   const [equation, setEquation] = useState('');
+  const [graphControlsOpen, setGraphControlsOpen] = useState(false);
 
   const calculateResult = useCallback((operation, value1, value2) => {
     const num1 = parseFloat(value1.replace(',', '.'));
@@ -89,12 +90,12 @@ const Calculator = () => {
     }
   }, []);
 
-  const addToHistory = useCallback((operation) => {
+  const addToHistory = useCallback((operation, type = null) => {
     const newOperation = {
       operation,
       timestamp: new Date(),
       isFavorite: false,
-      type: getOperationType(operation)
+      type: type || getOperationType(operation)
     };
     setHistory(prev => [newOperation, ...prev]);
   }, []);
@@ -743,15 +744,67 @@ const Calculator = () => {
   );
 
   const getOperationType = (operation) => {
-    if (typeof operation === 'string') {
-      if (operation.includes('sin(') || operation.includes('cos(') || operation.includes('tan(')) {
-        return 'scientific';
-      } else if (operation.includes('Ecuación:')) {
-        return 'equation';
-      } else if (operation.includes('=')) {
-        return 'graph';
+    if (typeof operation !== 'string') return 'basic';
+    
+    // Normalizar la operación para búsqueda
+    const normalizedOp = operation.toLowerCase();
+    
+    // Patrones para cada tipo de operación
+    const patterns = {
+      scientific: {
+        functions: ['sin(', 'cos(', 'tan(', 'log(', 'ln(', '√', '∛'],
+        constants: ['π', 'e'],
+        operations: ['!', '²', '³', '^', '√('],
+        keywords: ['factorial', 'raíz', 'potencia']
+      },
+      equation: {
+        indicators: ['ecuación:', 'sistema:', 'inecuación:'],
+        variables: ['x', 'y', 'z'],
+        operators: ['≤', '≥', '<', '>', '±']
+      },
+      graph: {
+        functions: ['f(x)', 'y=', 'x='],
+        coordinates: /\(\s*-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?\s*\)/,
+        keywords: ['gráfico', 'plot', 'coordenadas']
+      },
+      advanced: {
+        operations: ['%', '1/x', 'mod', '|x|'],
+        conversions: ['→', '⇒', 'to', 'en']
       }
-    }
+    };
+
+    // Funciones de detección específicas
+    const isScientific = () => {
+      return patterns.scientific.functions.some(f => normalizedOp.includes(f)) ||
+             patterns.scientific.constants.some(c => normalizedOp.includes(c)) ||
+             patterns.scientific.operations.some(o => normalizedOp.includes(o)) ||
+             patterns.scientific.keywords.some(k => normalizedOp.includes(k));
+    };
+
+    const isEquation = () => {
+      return patterns.equation.indicators.some(i => normalizedOp.includes(i)) ||
+             (patterns.equation.variables.some(v => normalizedOp.includes(v)) &&
+              normalizedOp.includes('='));
+    };
+
+    const isGraph = () => {
+      return patterns.graph.functions.some(f => normalizedOp.includes(f)) ||
+             patterns.graph.coordinates.test(normalizedOp) ||
+             patterns.graph.keywords.some(k => normalizedOp.includes(k));
+    };
+
+    const isAdvanced = () => {
+      return patterns.advanced.operations.some(o => normalizedOp.includes(o)) ||
+             patterns.advanced.conversions.some(c => normalizedOp.includes(c));
+    };
+
+    // Determinar el tipo
+    if (isScientific()) return 'scientific';
+    if (isEquation()) return 'equation';
+    if (isGraph()) return 'graph';
+    if (isAdvanced()) return 'advanced';
+
+    // Si no coincide con ningún patrón específico
     return 'basic';
   };
 
@@ -1100,15 +1153,22 @@ const Calculator = () => {
         onClose={() => {
           setEquationModalOpen(false);
           setEquation('');
+          setDisplay('0');
         }}
         equation={equation}
         setEquation={setEquation}
         equationButtons={equationButtons}
-        onResult={(result) => {
-          setDisplay(result);
-          addToHistory(`Ecuación: ${result}`);
-          setEquation('');
-        }}
+        onGraphControlsChange={setGraphControlsOpen}
+        onResult={useCallback((result) => {
+          const resultString = typeof result === 'object' 
+            ? result.operation || JSON.stringify(result)
+            : String(result);
+          
+          setDisplay(resultString);
+          if (resultString.trim()) {
+            addToHistory(`Ecuación: ${equation} = ${resultString}`);
+          }
+        }, [equation, addToHistory])}
       />
     </>
   );

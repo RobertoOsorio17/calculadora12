@@ -65,7 +65,8 @@
 }
 
 .MuiSpeedDial-root {
-  transform: scale(1.2);
+  position: fixed !important;
+  transform: scale(1.2) !important;
 }
 
 .MuiSpeedDialAction-staticTooltipLabel {
@@ -83,7 +84,7 @@
   }
   
   .MuiSpeedDial-root {
-    transform: scale(1.4);
+    transform: scale(1.4) !important;
   }
 }
 

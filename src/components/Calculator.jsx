@@ -28,6 +28,13 @@ import {
   Snackbar,
   TextField,
   Menu as MuiMenu,
+  Tooltip,
+  ListItemButton,
+  Divider,
+  InputAdornment,
+  Chip,
+  Tabs,
+  Tab,
 } from '@mui/material';
 import { motion, AnimatePresence } from 'framer-motion';
 import HistoryIcon from '@mui/icons-material/History';
@@ -44,9 +51,18 @@ import Converter from './Converter';
 import HistoryDrawer from './HistoryDrawer';
 import solveEquation from '../utils/equationSolver';
 import EquationInput from './EquationInput';
+import { createTheme, ThemeProvider } from '@mui/material/styles';
+import ThemeSelector from './ThemeSelector';
+import EquationSolver from './EquationSolver';
+import StarIcon from '@mui/icons-material/Star';
+import StarBorderIcon from '@mui/icons-material/StarBorder';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import TimelineIcon from '@mui/icons-material/Timeline';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import SearchIcon from '@mui/icons-material/Search';
+import { alpha } from '@mui/material/styles';
 
 const Calculator = () => {
-  const theme = useTheme();
   const [display, setDisplay] = useState('0');
   const [firstNumber, setFirstNumber] = useState(null);
   const [operation, setOperation] = useState(null);
@@ -76,17 +92,114 @@ const Calculator = () => {
   const [lastOperation, setLastOperation] = useState(null);
   const [equation, setEquation] = useState('');
   const [graphControlsOpen, setGraphControlsOpen] = useState(false);
+  const [maxDigits] = useState(12);
+  const [currentTheme, setCurrentTheme] = useState({
+    name: 'Material Default',
+    primary: '#1976d2',
+    secondary: '#9c27b0',
+    background: '#ffffff',
+  });
+
+  const theme = useMemo(() => createTheme({
+    palette: {
+      mode: currentTheme.name === 'Oscuro' ? 'dark' : 'light',
+      primary: {
+        main: currentTheme.primary,
+      },
+      secondary: {
+        main: currentTheme.secondary,
+      },
+      background: {
+        default: currentTheme.background,
+        paper: currentTheme.background,
+      },
+      text: {
+        primary: currentTheme.text || (currentTheme.name === 'Oscuro' ? '#ffffff' : '#000000'),
+      },
+    },
+    components: {
+      MuiButton: {
+        styleOverrides: {
+          root: {
+            textTransform: 'none',
+            borderRadius: 8,
+          },
+        },
+      },
+      MuiPaper: {
+        styleOverrides: {
+          root: {
+            backgroundImage: 'none',
+          },
+        },
+      },
+    },
+  }), [currentTheme]);
+
+  const handleThemeChange = useCallback((newTheme) => {
+    setCurrentTheme(newTheme);
+    localStorage.setItem('calculatorTheme', JSON.stringify(newTheme));
+  }, []);
+
+  // Cargar tema guardado al iniciar
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('calculatorTheme');
+    if (savedTheme) {
+      try {
+        setCurrentTheme(JSON.parse(savedTheme));
+      } catch (error) {
+        console.error('Error loading theme:', error);
+      }
+    }
+  }, []);
 
   const calculateResult = useCallback((operation, value1, value2) => {
-    const num1 = parseFloat(value1.replace(',', '.'));
-    const num2 = parseFloat(value2.replace(',', '.'));
-    
-    switch (operation) {
-      case '+': return (num1 + num2).toString().replace('.', ',');
-      case '-': return (num1 - num2).toString().replace('.', ',');
-      case '×': return (num1 * num2).toString().replace('.', ',');
-      case '÷': return num2 !== 0 ? (num1 / num2).toString().replace('.', ',') : 'Error';
-      default: return value2;
+    try {
+      const num1 = parseFloat(value1.replace(',', '.'));
+      const num2 = parseFloat(value2.replace(',', '.'));
+      
+      if (isNaN(num1) || isNaN(num2)) {
+        return 'Error';
+      }
+      
+      let result;
+      switch (operation) {
+        case '+': 
+          result = num1 + num2;
+          break;
+        case '-': 
+          result = num1 - num2;
+          break;
+        case '×': 
+          result = num1 * num2;
+          break;
+        case '÷':
+          if (num2 === 0) {
+            return 'Error: División por cero';
+          }
+          result = num1 / num2;
+          break;
+        default: 
+          return value2;
+      }
+      
+      // Manejar resultados especiales
+      if (!isFinite(result)) {
+        return 'Error: Resultado indefinido';
+      }
+      
+      // Limitar decimales para números muy grandes
+      if (Math.abs(result) > 1e15) {
+        return result.toExponential(5).replace('.', ',');
+      }
+      
+      // Redondear a 8 decimales para evitar errores de punto flotante
+      result = Math.round(result * 1e8) / 1e8;
+      
+      return result.toString().replace('.', ',');
+    } catch (error) {
+      console.error('Error en cálculo:', error);
+      return 'Error';
     }
   }, []);
 
@@ -100,43 +213,103 @@ const Calculator = () => {
     setHistory(prev => [newOperation, ...prev]);
   }, []);
 
+  const formatDisplay = (value) => {
+    if (value === 'Error') return value;
+    const numStr = value.toString().replace('.', ',');
+    if (numStr.length > maxDigits) {
+      return Number(value).toExponential(maxDigits - 7).replace('.', ',');
+    }
+    return numStr;
+  };
+
   const handleNumberClick = useCallback((number) => {
+    if (display === 'Error') {
+      setDisplay(number);
+      setNewNumber(false);
+      return;
+    }
+    
     if (newNumber) {
       setDisplay(number);
       setNewNumber(false);
     } else {
-      setDisplay(prev => prev === '0' ? number : prev + number);
+      const newDisplay = display === '0' ? number : display + number;
+      if (newDisplay.replace(',', '').length <= maxDigits) {
+        setDisplay(newDisplay);
+      }
     }
-  }, [newNumber]);
+  }, [newNumber, display, maxDigits]);
 
   const handleOperationClick = useCallback((op) => {
-    if (newNumber) {
-      if (firstNumber === null) {
-        setFirstNumber(display);
-      }
-    } else {
-      if (firstNumber !== null) {
-        const result = calculateResult(operation, firstNumber, display);
-        setDisplay(result);
-        setFirstNumber(result);
-      } else {
-        setFirstNumber(display);
-      }
+    if (display === 'Error' || display.startsWith('Error:')) {
+      handleClear();
+      return;
     }
-    setOperation(op);
-    setNewNumber(true);
-  }, [display, firstNumber, operation, newNumber, calculateResult]);
 
-  const handleEquals = useCallback(() => {
-    if (firstNumber !== null && operation !== null && !newNumber) {
-      const result = calculateResult(operation, firstNumber, display);
-      setDisplay(result);
-      addToHistory(`${firstNumber} ${operation} ${display} = ${result}`);
-      setFirstNumber(result);
+    try {
+      if (newNumber && operation !== null) {
+        // Si ya hay una operación pendiente, solo cambiar la operación
+        setOperation(op);
+        return;
+      }
+
+      if (!newNumber) {
+        if (firstNumber !== null) {
+          const result = calculateResult(operation, firstNumber, display);
+          if (result.startsWith('Error')) {
+            setDisplay(result);
+            setFirstNumber(null);
+            setOperation(null);
+            setNewNumber(true);
+            return;
+          }
+          setDisplay(result);
+          setFirstNumber(result);
+        } else {
+          setFirstNumber(display);
+        }
+      }
+      
+      setOperation(op);
+      setNewNumber(true);
+    } catch (error) {
+      console.error('Error en operación:', error);
+      setDisplay('Error');
+      setFirstNumber(null);
       setOperation(null);
       setNewNumber(true);
     }
-  }, [firstNumber, operation, display, newNumber, addToHistory]);
+  }, [display, firstNumber, operation, newNumber, calculateResult]);
+
+  const handleEquals = useCallback(() => {
+    if (display === 'Error' || display.startsWith('Error:')) {
+      return;
+    }
+
+    try {
+      if (firstNumber !== null && operation !== null && !newNumber) {
+        const result = calculateResult(operation, firstNumber, display);
+        setDisplay(result);
+        
+        // Solo agregar al historial si no hay error
+        if (!result.startsWith('Error')) {
+          addToHistory(`${firstNumber} ${operation} ${display} = ${result}`);
+          setFirstNumber(result);
+        } else {
+          setFirstNumber(null);
+        }
+        
+        setOperation(null);
+        setNewNumber(true);
+      }
+    } catch (error) {
+      console.error('Error en equals:', error);
+      setDisplay('Error');
+      setFirstNumber(null);
+      setOperation(null);
+      setNewNumber(true);
+    }
+  }, [firstNumber, operation, display, newNumber, calculateResult, addToHistory]);
 
   const handleClear = () => {
     setDisplay('0');
@@ -830,92 +1003,215 @@ const Calculator = () => {
 
   const handleSelectOperation = useCallback((operation, action) => {
     if (action === 'favorite') {
-      // No cerrar el drawer si es una acción de favorito
       return;
     }
-    const result = operation.operation.split('=')[1]?.trim() || operation.operation;
+    const result = operation.split('=')[1]?.trim() || operation;
     setDisplay(result);
     handleHistoryClose();
   }, []);
 
+  const getButtonStyles = (btn) => ({
+    height: { xs: 55, sm: 60 },
+    fontSize: { xs: '1.2rem', sm: '1.4rem' },
+    borderRadius: 2,
+    backgroundColor: isNaN(btn) 
+      ? (btn === '=' 
+        ? theme.palette.secondary.main 
+        : btn === 'C' 
+          ? theme.palette.error.main 
+          : theme.palette.primary.main)
+      : theme.palette.background.paper,
+    color: isNaN(btn) ? 'white' : theme.palette.text.primary,
+    boxShadow: theme.palette.mode === 'light'
+      ? '3px 3px 6px #bebebe, -3px -3px 6px #ffffff'
+      : '3px 3px 6px #151515, -3px -3px 6px #252525',
+    '&:hover': {
+      backgroundColor: isNaN(btn) 
+        ? (btn === '=' 
+          ? theme.palette.secondary.dark 
+          : btn === 'C'
+            ? theme.palette.error.dark
+            : theme.palette.primary.dark)
+        : alpha(theme.palette.primary.main, 0.1),
+      transform: 'translateY(-2px)',
+      boxShadow: theme.palette.mode === 'light'
+        ? '5px 5px 10px #bebebe, -5px -5px 10px #ffffff'
+        : '5px 5px 10px #151515, -5px -5px 10px #252525',
+    },
+    '&:active': {
+      transform: 'translateY(1px)',
+      boxShadow: theme.palette.mode === 'light'
+        ? '2px 2px 4px #bebebe, -2px -2px 4px #ffffff'
+        : '2px 2px 4px #151515, -2px -2px 4px #252525',
+    },
+    minWidth: { xs: '100%', sm: 'auto' },
+    padding: { xs: '10px', sm: '15px' },
+    transition: 'all 0.2s ease-in-out',
+  });
+
+  const handleEquationSolve = (solution) => {
+    try {
+      let historyEntry = {
+        type: 'equation',
+        timestamp: new Date(),
+        equation: solution.type === 'linear' ? `x = ${solution.result}` : String(solution.result),
+        steps: solution.steps,
+        originalEquation: solution.type === 'linear' ? 'Ecuación lineal' : 'Expresión matemática'
+      };
+
+      setDisplay(historyEntry.equation);
+      setHistory(prev => [historyEntry, ...prev]);
+      setEquationModalOpen(false);
+    } catch (error) {
+      console.error('Error al procesar la solución:', error);
+    }
+  };
+
   return (
-    <>
-      <Container 
-        maxWidth="sm" 
-        sx={{ 
-          position: 'relative',
-          pt: 1,
-          pb: 2
+    <ThemeProvider theme={theme}>
+      <Box
+        sx={{
+          minHeight: '100vh',
+          width: '100%',
+          background: theme.palette.mode === 'light' 
+            ? 'linear-gradient(145deg, #f0f0f0, #ffffff)'
+            : 'linear-gradient(145deg, #1a1a1a, #2d2d2d)',
+          transition: 'background-color 0.3s ease',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          p: 2,
         }}
-        {...swipeHandlers}
-        onTouchStart={handleTouchStart}
       >
-        <AnimatePresence mode="wait">
+        <Container 
+          maxWidth="sm" 
+          sx={{ 
+            position: 'relative',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+          {...swipeHandlers}
+          onTouchStart={handleTouchStart}
+        >
           <Paper
-            component={motion.div}
-            elevation={8}
-            layout
-            transition={{ 
-              layout: { duration: 0.6, type: "spring" },
-              opacity: { duration: 0.3 }
-            }}
+            elevation={12}
             sx={{
-              p: 2,
+              width: '100%',
+              borderRadius: 4,
+              overflow: 'hidden',
               background: theme.palette.mode === 'light' 
                 ? 'linear-gradient(145deg, #ffffff, #f0f0f0)'
-                : 'linear-gradient(145deg, #2a2a2a, #1a1a1a)',
-              borderRadius: 4,
-              position: 'relative',
-              touchAction: 'none',
+                : 'linear-gradient(145deg, #2d2d2d, #1a1a1a)',
+              border: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+              boxShadow: theme.palette.mode === 'light'
+                ? '20px 20px 60px #bebebe, -20px -20px 60px #ffffff'
+                : '20px 20px 60px #151515, -20px -20px 60px #252525',
+              p: 3,
             }}
           >
-            <IconButton
-              onClick={(e) => setMenuAnchorEl(e.currentTarget)}
+            {/* Barra superior con iconos */}
+            <Box
               sx={{
-                position: 'absolute',
-                top: 16,
-                left: 16,
-                color: theme.palette.text.primary,
+                display: 'flex',
+                justifyContent: 'space-between',
+                mb: 2,
+                px: 1,
               }}
             >
-              <FunctionsIcon />
-            </IconButton>
+              <ThemeSelector 
+                currentTheme={currentTheme}
+                onThemeChange={handleThemeChange}
+              />
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <Tooltip title="Historial" arrow>
+                  <IconButton
+                    onClick={handleHistoryOpen}
+                    sx={{
+                      color: theme.palette.primary.main,
+                      '&:hover': {
+                        backgroundColor: alpha(theme.palette.primary.main, 0.1),
+                      },
+                    }}
+                  >
+                    <HistoryIcon />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Modo científico" arrow>
+                  <IconButton
+                    onClick={() => setIsScientificMode(prev => !prev)}
+                    sx={{
+                      color: theme.palette.primary.main,
+                      '&:hover': {
+                        backgroundColor: alpha(theme.palette.primary.main, 0.1),
+                      },
+                    }}
+                  >
+                    <FunctionsIcon />
+                  </IconButton>
+                </Tooltip>
+              </Box>
+            </Box>
 
-            {renderMenu()}
-
-            <Box 
+            {/* Display de la calculadora */}
+            <Paper
               onClick={handleCopyToClipboard}
               sx={{
                 background: theme.palette.mode === 'light'
-                  ? 'linear-gradient(145deg, #e6e6e6, #ffffff)'
-                  : 'linear-gradient(145deg, #2a2a2a, #1e1e1e)',
+                  ? alpha(theme.palette.primary.main, 0.05)
+                  : alpha(theme.palette.primary.main, 0.1),
                 p: 3,
-                mb: 2,
+                mb: 3,
                 borderRadius: 2,
-                boxShadow: theme.palette.mode === 'light'
-                  ? 'inset 5px 5px 10px #d1d1d1, inset -5px -5px 10px #ffffff'
-                  : 'inset 5px 5px 10px #151515, inset -5px -5px 10px #252525',
-                minHeight: '80px',
+                cursor: 'pointer',
+                minHeight: '120px',
                 display: 'flex',
+                flexDirection: 'column',
                 alignItems: 'flex-end',
                 justifyContent: 'flex-end',
-                cursor: 'pointer',
+                position: 'relative',
+                transition: 'all 0.3s ease',
+                '&:hover': {
+                  transform: 'scale(1.01)',
+                  boxShadow: `0 0 20px ${alpha(theme.palette.primary.main, 0.2)}`,
+                },
               }}
             >
+              {operation && (
+                <Typography 
+                  variant="h6" 
+                  sx={{ 
+                    color: alpha(theme.palette.text.primary, 0.7),
+                    fontSize: '1.2rem',
+                    mb: 1,
+                  }}
+                >
+                  {firstNumber} {operation}
+                </Typography>
+              )}
               <Typography 
                 variant="h3" 
                 sx={{ 
-                  color: theme.palette.primary.main,
+                  color: theme.palette.text.primary,
                   wordBreak: 'break-all',
                   textAlign: 'right',
-                  width: '100%'
+                  width: '100%',
+                  fontSize: display.length > 8 ? '2.5rem' : '3.5rem',
+                  fontWeight: 500,
+                  lineHeight: 1.2,
+                  letterSpacing: '0.02em',
+                  textShadow: theme.palette.mode === 'light'
+                    ? '1px 1px 2px rgba(0,0,0,0.1)'
+                    : '1px 1px 2px rgba(255,255,255,0.1)',
                 }}
               >
-                {display}
+                {formatDisplay(display)}
               </Typography>
-            </Box>
+            </Paper>
 
-            <Grid container spacing={1}>
+            {/* Teclado de la calculadora */}
+            <Grid container spacing={1.5}>
               {[
                 '7', '8', '9', '÷',
                 '4', '5', '6', '×',
@@ -927,8 +1223,8 @@ const Calculator = () => {
                   <ButtonWrapper
                     data-button={btn}
                     component={motion.button}
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
                     initial={{ scale: 1 }}
                     transition={{ 
                       type: "spring",
@@ -937,25 +1233,43 @@ const Calculator = () => {
                     }}
                     fullWidth
                     sx={{
-                      height: { xs: 55, sm: 50 },
+                      height: { xs: 60, sm: 70 },
                       fontSize: { xs: '1.3rem', sm: '1.5rem' },
                       borderRadius: 2,
                       backgroundColor: isNaN(btn) 
-                        ? (btn === '=' ? theme.palette.secondary.main : theme.palette.primary.main)
-                        : theme.palette.mode === 'light' ? '#ffffff' : '#2a2a2a',
+                        ? (btn === '=' 
+                          ? theme.palette.secondary.main 
+                          : btn === 'C' 
+                            ? theme.palette.error.main 
+                            : theme.palette.primary.main)
+                        : theme.palette.background.paper,
                       color: isNaN(btn) ? 'white' : theme.palette.text.primary,
+                      fontWeight: 'medium',
                       boxShadow: theme.palette.mode === 'light'
-                        ? '5px 5px 10px #bebebe, -5px -5px 10px #ffffff'
-                        : '5px 5px 10px #151515, -5px -5px 10px #252525',
+                        ? '3px 3px 6px #bebebe, -3px -3px 6px #ffffff'
+                        : '3px 3px 6px #151515, -3px -3px 6px #252525',
                       '&:hover': {
                         backgroundColor: isNaN(btn) 
-                          ? (btn === '=' ? theme.palette.secondary.dark : theme.palette.primary.dark)
-                          : theme.palette.mode === 'light' ? '#f5f5f5' : '#3a3a3a',
+                          ? (btn === '=' 
+                            ? alpha(theme.palette.secondary.main, 0.9)
+                            : btn === 'C'
+                              ? alpha(theme.palette.error.main, 0.9)
+                              : alpha(theme.palette.primary.main, 0.9))
+                          : alpha(theme.palette.primary.main, 0.1),
+                        boxShadow: theme.palette.mode === 'light'
+                          ? '5px 5px 10px #bebebe, -5px -5px 10px #ffffff'
+                          : '5px 5px 10px #151515, -5px -5px 10px #252525',
                       },
-                      minWidth: { xs: '100%', sm: 'auto' },
-                      padding: { xs: '12px', sm: '8px' },
+                      '&:active': {
+                        boxShadow: 'inset 2px 2px 5px rgba(0,0,0,0.2)',
+                        transform: 'translateY(1px)',
+                      },
                     }}
                     onClick={() => {
+                      if (window.navigator.vibrate) {
+                        window.navigator.vibrate(10);
+                      }
+                      
                       switch(true) {
                         case btn === 'C':
                           handleClear();
@@ -980,122 +1294,79 @@ const Calculator = () => {
               ))}
             </Grid>
 
-            <SpeedDial
-              ariaLabel="Operaciones avanzadas"
-              sx={{
-                position: 'absolute',
-                bottom: 16,
-                right: 16,
-              }}
-              icon={<SpeedDialIcon icon={<FunctionsIcon />} />}
-              onClose={() => setShowAdvanced(false)}
-              onOpen={() => setShowAdvanced(true)}
-              open={showAdvanced}
-              direction="up"
-            >
-              {advancedActions.map((action) => (
-                <SpeedDialAction
-                  key={action.icon}
-                  icon={action.icon}
-                  tooltipTitle={action.name}
-                  onClick={() => handleAdvancedOperation(action.icon)}
-                  sx={{
-                    '& .MuiSpeedDialAction-staticTooltipLabel': {
-                      width: 'auto',
-                      maxWidth: 'none',
-                    }
-                  }}
-                />
-              ))}
-            </SpeedDial>
-
+            {/* Botones científicos */}
             <AnimatePresence>
               {isScientificMode && (
-                <Grid 
-                  container 
-                  spacing={1.5}
+                <Box
                   component={motion.div}
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
                   exit={{ opacity: 0, height: 0 }}
                   transition={{ duration: 0.3 }}
-                  sx={{ mt: 1 }}
+                  sx={{ mt: 2 }}
                 >
-                  {scientificActions.map((action) => (
-                    <Grid item xs={4} key={action.icon}>
-                      <ButtonWrapper
-                        key={action.icon}
-                        component={motion.button}
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        initial={{ scale: 1 }}
-                        transition={{ 
-                          type: "spring",
-                          stiffness: 500,
-                          damping: 30
-                        }}
-                        fullWidth
-                        onClick={() => handleScientificOperation(action.operation)}
-                        sx={{
-                          height: { xs: 55, sm: 50 },
-                          fontSize: { xs: '1.1rem', sm: '1.2rem' },
-                          borderRadius: 2,
-                          backgroundColor: theme.palette.secondary.main,
-                          color: 'white',
-                          boxShadow: theme.palette.mode === 'light'
-                            ? '5px 5px 10px #bebebe, -5px -5px 10px #ffffff'
-                            : '5px 5px 10px #151515, -5px -5px 10px #252525',
-                          '&:hover': {
-                            backgroundColor: theme.palette.secondary.dark,
-                          },
-                          minWidth: { xs: '100%', sm: 'auto' },
-                          padding: { xs: '12px', sm: '8px' },
-                        }}
-                      >
-                        {action.icon}
-                      </ButtonWrapper>
-                    </Grid>
-                  ))}
-                </Grid>
+                  <Grid container spacing={1.5}>
+                    {scientificActions.map((action) => (
+                      <Grid item xs={4} key={action.icon}>
+                        <ButtonWrapper
+                          component={motion.button}
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          initial={{ scale: 1 }}
+                          transition={{ 
+                            type: "spring",
+                            stiffness: 500,
+                            damping: 30
+                          }}
+                          fullWidth
+                          onClick={() => handleScientificOperation(action.operation)}
+                          sx={{
+                            height: { xs: 50, sm: 60 },
+                            fontSize: { xs: '1.1rem', sm: '1.2rem' },
+                            borderRadius: 2,
+                            backgroundColor: theme.palette.secondary.main,
+                            color: 'white',
+                            fontWeight: 'medium',
+                            boxShadow: theme.palette.mode === 'light'
+                              ? '3px 3px 6px #bebebe, -3px -3px 6px #ffffff'
+                              : '3px 3px 6px #151515, -3px -3px 6px #252525',
+                            '&:hover': {
+                              backgroundColor: alpha(theme.palette.secondary.main, 0.9),
+                              boxShadow: theme.palette.mode === 'light'
+                                ? '5px 5px 10px #bebebe, -5px -5px 10px #ffffff'
+                                : '5px 5px 10px #151515, -5px -5px 10px #252525',
+                            },
+                            '&:active': {
+                              boxShadow: 'inset 2px 2px 5px rgba(0,0,0,0.2)',
+                              transform: 'translateY(1px)',
+                            },
+                          }}
+                        >
+                          {action.icon}
+                        </ButtonWrapper>
+                      </Grid>
+                    ))}
+                  </Grid>
+                </Box>
               )}
             </AnimatePresence>
           </Paper>
-        </AnimatePresence>
-
-        <IconButton
-          onClick={handleHistoryOpen}
-          sx={{
-            position: 'absolute',
-            top: 8,
-            right: 8,
-            backgroundColor: theme.palette.background.paper,
-            boxShadow: theme.shadows[2],
-            '&:hover': {
-              backgroundColor: theme.palette.action.hover
-            },
-            zIndex: 1
-          }}
-        >
-          <HistoryIcon fontSize="small" />
-        </IconButton>
-
-        {showHistory && (
-          <HistoryDrawer 
-            open={showHistory}
-            onClose={handleHistoryClose}
-            history={categorizedHistory}
-            onSelectOperation={handleSelectOperation}
-            onDeleteOperation={handleDeleteOperation}
-            onToggleFavorite={handleToggleFavorite}
-            onCopyResult={handleCopyResult}
-            onImportData={handleImportData}
-          />
-        )}
-      </Container>
+        </Container>
+      </Box>
 
       <DeleteConfirmationModal />
       <ExportModal />
       <ImportModal />
+
+      <HistoryDrawer 
+        open={showHistory}
+        onClose={handleHistoryClose}
+        history={history}
+        onSelectOperation={handleSelectOperation}
+        onDeleteOperation={handleDeleteOperation}
+        onToggleFavorite={handleToggleFavorite}
+        onCopyResult={handleCopyResult}
+      />
 
       <Snackbar
         open={showCopyToast}
@@ -1134,43 +1405,12 @@ const Calculator = () => {
         <div dangerouslySetInnerHTML={{ __html: error }} />
       </Snackbar>
 
-      <AnimatePresence>
-        {isConverterMode && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.3 }}
-            style={{ marginTop: '1rem' }}
-          >
-            <Converter />
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <EquationInput 
+      <EquationSolver
         open={equationModalOpen}
-        onClose={() => {
-          setEquationModalOpen(false);
-          setEquation('');
-          setDisplay('0');
-        }}
-        equation={equation}
-        setEquation={setEquation}
-        equationButtons={equationButtons}
-        onGraphControlsChange={setGraphControlsOpen}
-        onResult={useCallback((result) => {
-          const resultString = typeof result === 'object' 
-            ? result.operation || JSON.stringify(result)
-            : String(result);
-          
-          setDisplay(resultString);
-          if (resultString.trim()) {
-            addToHistory(`Ecuación: ${equation} = ${resultString}`);
-          }
-        }, [equation, addToHistory])}
+        onClose={() => setEquationModalOpen(false)}
+        onSolve={handleEquationSolve}
       />
-    </>
+    </ThemeProvider>
   );
 };
 

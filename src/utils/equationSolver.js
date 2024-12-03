@@ -1,411 +1,195 @@
-const solveEquation = (equation) => {
-  try {
-    equation = validateEquation(equation);
-    equation = equation.replace(/\s+/g, '').toLowerCase();
+// Función para tokenizar la ecuación
+const tokenize = (equation) => {
+  const tokens = [];
+  let current = '';
+  
+  const isOperator = char => '+-*/^()='.includes(char);
+  const isLetter = char => /[a-zA-Z]/.test(char);
+  const isNumber = char => /[0-9.]/.test(char);
+  
+  for (let i = 0; i < equation.length; i++) {
+    const char = equation[i];
     
-    // Normalizar notación
-    equation = equation
-      .replace(/\^2/g, '²')
-      .replace(/\^3/g, '³')
-      .replace(/sqrt/g, '√');
-    
-    if (equation.includes('y')) {
-      if (equation.includes(';')) {
-        return solveSystemOfEquations(equation);
+    if (isOperator(char)) {
+      if (current) {
+        tokens.push(current);
+        current = '';
       }
-      throw new Error(
-        'Una ecuación con dos variables (x,y) necesita un sistema de ecuaciones.\n' +
-        'Ejemplo: 2x+3y=5; 4x-y=1'
-      );
-    } else if (equation.includes('x³') || equation.includes('x^3')) {
-      return solveCubic(equation);
-    } else if (equation.includes('x²') || equation.includes('x^2')) {
-      return solveQuadratic(equation);
-    } else if (equation.includes('|x|') || equation.includes('abs(x)')) {
-      return solveAbsolute(equation);
-    } else if (equation.includes('√') || equation.includes('sqrt')) {
-      return solveSquareRoot(equation);
-    } else if (equation.includes('x')) {
-      return solveLinear(equation);
-    }
-    
-    throw new Error('Formato de ecuación no reconocido');
-  } catch (error) {
-    throw new Error(error.message);
-  }
-};
-
-const solveSystemOfEquations = (equations) => {
-  try {
-    // Separamos las ecuaciones
-    const [eq1, eq2] = equations.split(';');
-    if (!eq1 || !eq2) {
-      throw new Error('Se necesitan dos ecuaciones separadas por punto y coma (;)');
-    }
-    
-    // Extraemos coeficientes (ax + by = c)
-    const coef1 = extractCoefficients(eq1);
-    const coef2 = extractCoefficients(eq2);
-    
-    // Método de Cramer
-    const determinant = coef1.a * coef2.b - coef1.b * coef2.a;
-    
-    if (Math.abs(determinant) < 1e-10) {
-      throw new Error('El sistema no tiene solución única');
-    }
-    
-    const x = (coef1.c * coef2.b - coef1.b * coef2.c) / determinant;
-    const y = (coef1.a * coef2.c - coef1.c * coef2.a) / determinant;
-    
-    return [{
-      x: roundToDecimals(x, 4),
-      y: roundToDecimals(y, 4),
-      type: 'system',
-      steps: [
-        'Sistema de ecuaciones:',
-        `${formatEquation(coef1)} = ${coef1.c}`,
-        `${formatEquation(coef2)} = ${coef2.c}`,
-        'Resolviendo por método de Cramer:',
-        `Determinante = ${roundToDecimals(determinant, 4)}`,
-        `x = ${roundToDecimals(x, 4)}`,
-        `y = ${roundToDecimals(y, 4)}`
-      ]
-    }];
-  } catch (error) {
-    throw new Error(`Error al resolver el sistema: ${error.message}`);
-  }
-};
-
-const extractCoefficients = (equation) => {
-  try {
-    const sides = equation.split('=');
-    if (sides.length !== 2) {
-      throw new Error('La ecuación debe tener un signo =');
-    }
-    
-    const left = sides[0];
-    const right = sides[1];
-    
-    let a = 0, b = 0, c = parseFloat(right) || 0;
-    
-    const terms = left.match(/[+-]?\d*x|[+-]?\d*y|[+-]?\d+/g) || [];
-    
-    terms.forEach(term => {
-      if (term.includes('x')) {
-        a += term === 'x' ? 1 : term === '-x' ? -1 : parseFloat(term.replace('x', ''));
-      } else if (term.includes('y')) {
-        b += term === 'y' ? 1 : term === '-y' ? -1 : parseFloat(term.replace('y', ''));
-      } else {
-        c -= parseFloat(term);
+      tokens.push(char);
+    } else if (isLetter(char)) {
+      if (current && !isLetter(current[0])) {
+        tokens.push(current);
+        current = '';
       }
-    });
-    
-    return { a, b, c };
-  } catch (error) {
-    throw new Error(`Error al extraer coeficientes: ${error.message}`);
+      current += char;
+    } else if (isNumber(char)) {
+      if (current && isLetter(current[0])) {
+        tokens.push(current);
+        current = '';
+      }
+      current += char;
+    } else if (char !== ' ') {
+      current += char;
+    }
   }
+  
+  if (current) {
+    tokens.push(current);
+  }
+  
+  return tokens;
 };
 
-const roundToDecimals = (num, decimals) => {
-  const factor = Math.pow(10, decimals);
-  return Math.round(num * factor) / factor;
-};
+// Función para evaluar expresiones matemáticas con pasos
+const evaluateExpression = (expression, variables) => {
+  const steps = ['Evaluando expresión:'];
+  steps.push(`1. Expresión original: ${expression}`);
 
-const formatEquation = (coef) => {
-  const formatTerm = (coefficient, variable) => {
-    if (coefficient === 0) return '';
-    if (coefficient === 1) return `+${variable}`;
-    if (coefficient === -1) return `-${variable}`;
-    return `${coefficient > 0 ? '+' : ''}${coefficient}${variable}`;
+  const tokens = tokenize(expression);
+  steps.push(`2. Tokens identificados: ${tokens.join(' ')}`);
+
+  const stack = [];
+  let currentStep = 3;
+
+  const applyOperator = (operator) => {
+    const b = parseFloat(stack.pop());
+    const a = parseFloat(stack.pop());
+    let result;
+    switch (operator) {
+      case '+': result = a + b; break;
+      case '-': result = a - b; break;
+      case '*': result = a * b; break;
+      case '/': result = a / b; break;
+      case '^': result = Math.pow(a, b); break;
+      default: throw new Error(`Operador desconocido: ${operator}`);
+    }
+    stack.push(result);
+    steps.push(`${currentStep}. ${a} ${operator} ${b} = ${result}`);
+    currentStep++;
   };
 
-  let equation = formatTerm(coef.a, 'x');
-  equation += formatTerm(coef.b, 'y');
-  
-  // Eliminar el + inicial si existe
-  return equation.startsWith('+') ? equation.substring(1) : equation;
-};
-
-const solveLinear = (equation) => {
-  try {
-    let sides = equation.split('=');
-    if (sides.length !== 2) throw new Error('La ecuación debe tener un signo =');
-    
-    let left = sides[0];
-    let right = sides[1];
-    
-    // Mover todos los términos al lado izquierdo
-    let normalizedEquation = `${left}-${right}`;
-    
-    // Coeficientes
-    let a = 0; // coeficiente de x
-    let b = 0; // término independiente
-    
-    // Procesamos términos
-    let terms = normalizedEquation.match(/[+-]?\d*x|[+-]?\d+/g);
-    if (!terms) throw new Error('Formato de ecuación inválido');
-    
-    terms.forEach(term => {
-      if (term.includes('x')) {
-        // Manejar casos como +x, -x, x
-        if (term === 'x') a += 1;
-        else if (term === '-x') a -= 1;
-        else a += parseFloat(term.replace('x', ''));
-      } else {
-        b += parseFloat(term);
-      }
-    });
-    
-    if (Math.abs(a) < 1e-10) throw new Error('No es una ecuación lineal válida (coeficiente de x es 0)');
-    
-    const x = -b / a;
-    return [{
-      x: roundToDecimals(x, 4),
-      type: 'real',
-      steps: [
-        'Ecuación lineal:',
-        `${a}x + ${b} = 0`,
-        `${a}x = ${-b}`,
-        `x = ${roundToDecimals(x, 4)}`
-      ]
-    }];
-  } catch (error) {
-    throw new Error(`Error en ecuación lineal: ${error.message}`);
-  }
-};
-
-const solveQuadratic = (equation) => {
-  try {
-    let a = 0, b = 0, c = 0;
-    
-    let sides = equation.split('=');
-    if (sides.length !== 2) throw new Error('La ecuación debe tener un signo =');
-    
-    let left = sides[0];
-    let right = sides[1];
-    
-    let terms = (left + '-' + right).match(/[+-]?\d*x²|[+-]?\d*x|[+-]?\d+/g);
-    if (!terms) throw new Error('Formato de ecuación inválido');
-    
-    terms.forEach(term => {
-      if (term.includes('x²')) {
-        a += term === 'x²' ? 1 : term === '-x²' ? -1 : parseFloat(term.replace('x²', ''));
-      } else if (term.includes('x')) {
-        b += term === 'x' ? 1 : term === '-x' ? -1 : parseFloat(term.replace('x', ''));
-      } else {
-        c += parseFloat(term);
-      }
-    });
-    
-    if (a === 0) throw new Error('No es una ecuación cuadrática válida (coeficiente de x² es 0)');
-    
-    const discriminant = b * b - 4 * a * c;
-    const steps = [
-      'Ecuación cuadrática:',
-      `${a}x² + ${b}x + ${c} = 0`,
-      `Discriminante = ${discriminant}`
-    ];
-    
-    if (discriminant > 0) {
-      const x1 = (-b + Math.sqrt(discriminant)) / (2 * a);
-      const x2 = (-b - Math.sqrt(discriminant)) / (2 * a);
-      steps.push(`x₁ = ${roundToDecimals(x1, 4)}`, `x₂ = ${roundToDecimals(x2, 4)}`);
-      return [
-        { x: roundToDecimals(x1, 4), type: 'real', steps },
-        { x: roundToDecimals(x2, 4), type: 'real', steps }
-      ];
-    } else if (discriminant === 0) {
-      const x = -b / (2 * a);
-      steps.push(`x = ${roundToDecimals(x, 4)}`);
-      return [{ x: roundToDecimals(x, 4), type: 'real', steps }];
+  for (const token of tokens) {
+    if ('+-*/^'.includes(token)) {
+      applyOperator(token);
+    } else if (variables[token] !== undefined) {
+      stack.push(variables[token]);
+      steps.push(`${currentStep}. Variable ${token} = ${variables[token]}`);
+      currentStep++;
+    } else if (!isNaN(token)) {
+      stack.push(parseFloat(token));
     } else {
-      const realPart = -b / (2 * a);
-      const imagPart = Math.sqrt(-discriminant) / (2 * a);
-      steps.push(
-        `x₁ = ${roundToDecimals(realPart, 4)} + ${roundToDecimals(imagPart, 4)}i`,
-        `x₂ = ${roundToDecimals(realPart, 4)} - ${roundToDecimals(imagPart, 4)}i`
-      );
-      return [
-        { x: `${roundToDecimals(realPart, 4)} + ${roundToDecimals(imagPart, 4)}i`, type: 'complex', steps },
-        { x: `${roundToDecimals(realPart, 4)} - ${roundToDecimals(imagPart, 4)}i`, type: 'complex', steps }
-      ];
+      throw new Error(`Token inválido: ${token}`);
     }
-  } catch (error) {
-    throw new Error(`Error en ecuación cuadrática: ${error.message}`);
   }
+
+  const result = stack[0];
+  steps.push(`${currentStep}. Resultado final: ${result}`);
+
+  return {
+    result,
+    steps,
+    type: 'expression'
+  };
 };
 
-// Función para resolver ecuaciones con valor absoluto
-const solveAbsolute = (equation) => {
-  // Normalizar la ecuación
-  equation = equation.replace(/\|/g, 'abs').replace(/abs\(x\)/g, '|x|');
-  const sides = equation.split('=');
-  if (sides.length !== 2) throw new Error('La ecuación debe tener un signo =');
-  
-  // Resolver las dos posibilidades: x y -x
-  const positive = equation.replace(/\|x\|/g, 'x');
-  const negative = equation.replace(/\|x\|/g, '(-x)');
-  
-  const solutions = [
-    ...solveLinear(positive),
-    ...solveLinear(negative)
-  ];
-  
-  return solutions.filter((sol, index, self) => 
-    index === self.findIndex(s => Math.abs(s.x - sol.x) < 1e-10)
-  );
-};
+// Función para resolver ecuaciones lineales
+const solveLinearEquation = (equation) => {
+  const steps = ['Resolviendo ecuación lineal:'];
+  steps.push(`1. Ecuación original: ${equation}`);
 
-// Función para resolver ecuaciones con raíz cuadrada
-const solveSquareRoot = (equation) => {
-  equation = equation.replace(/√/g, 'sqrt');
-  const sides = equation.split('=');
-  if (sides.length !== 2) throw new Error('La ecuación debe tener un signo =');
+  const [leftSide, rightSide] = equation.split('=').map(side => side.trim());
+  steps.push(`2. Separando la ecuación en dos lados: ${leftSide} = ${rightSide}`);
   
-  // Elevar al cuadrado ambos lados
-  const squared = `${sides[0]}^2=${sides[1]}^2`;
-  const solutions = solveQuadratic(squared);
+  // Separar términos con x y términos constantes
+  const terms = tokenize(leftSide);
+  let coefficient = 0;
+  let constant = 0;
   
-  // Verificar soluciones (pueden aparecer soluciones falsas al elevar al cuadrado)
-  return solutions.filter(sol => {
-    const original = equation
-      .replace(/x/g, `(${sol.x})`)
-      .replace(/sqrt/g, 'Math.sqrt');
-    try {
-      return Math.abs(eval(sides[0]) - eval(sides[1])) < 1e-10;
-    } catch {
-      return false;
+  for (let i = 0; i < terms.length; i++) {
+    if (terms[i].includes('x')) {
+      const coef = terms[i] === 'x' ? 1 : parseFloat(terms[i].replace('x', ''));
+      coefficient += coef;
+    } else if (!isNaN(terms[i])) {
+      constant += parseFloat(terms[i]);
     }
-  });
+  }
+
+  steps.push(`3. Agrupando términos similares:`);
+  steps.push(`   Coeficiente de x: ${coefficient}`);
+  steps.push(`   Término constante: ${constant}`);
+  
+  const rightValue = parseFloat(rightSide);
+  steps.push(`4. Valor del lado derecho: ${rightValue}`);
+
+  // Mover términos
+  const newConstant = rightValue - constant;
+  steps.push(`5. Despejando x: ${coefficient}x = ${newConstant}`);
+
+  const result = newConstant / coefficient;
+  steps.push(`6. Resultado final: x = ${newConstant} ÷ ${coefficient} = ${result}`);
+
+  return {
+    result,
+    steps,
+    type: 'linear'
+  };
 };
 
-// Función para resolver ecuaciones cúbicas
-const solveCubic = (equation) => {
+// Función principal para resolver ecuaciones
+export const solveEquation = (equationString) => {
   try {
-    equation = equation.replace(/x\^3/g, 'x³');
-    const sides = equation.split('=');
-    if (sides.length !== 2) throw new Error('La ecuación debe tener un signo =');
+    // Limpiar la ecuación
+    const equation = equationString.replace(/\s+/g, '');
     
-    let a = 0, b = 0, c = 0, d = 0;
-    const terms = (sides[0] + '-' + sides[1]).match(/[+-]?\d*x³|[+-]?\d*x²|[+-]?\d*x|[+-]?\d+/g);
-    
-    terms.forEach(term => {
-      if (term.includes('x³')) {
-        a += term === 'x³' ? 1 : term === '-x³' ? -1 : parseFloat(term.replace('x³', ''));
-      } else if (term.includes('x²')) {
-        b += term === 'x²' ? 1 : term === '-x²' ? -1 : parseFloat(term.replace('x²', ''));
-      } else if (term.includes('x')) {
-        c += term === 'x' ? 1 : term === '-x' ? -1 : parseFloat(term.replace('x', ''));
-      } else {
-        d += parseFloat(term);
-      }
-    });
-
-    if (Math.abs(a) < 1e-10) throw new Error('No es una ecuación cúbica válida (coeficiente de x³ es 0)');
-
-    // Método de Cardano
-    const p = (3 * a * c - b * b) / (3 * a * a);
-    const q = (2 * b * b * b - 9 * a * b * c + 27 * a * a * d) / (27 * a * a * a);
-    const D = (q * q / 4) + (p * p * p / 27);
-
-    const steps = [
-      'Ecuación cúbica:',
-      `${a}x³ + ${b}x² + ${c}x + ${d} = 0`,
-      'Aplicando método de Cardano:',
-      `p = ${roundToDecimals(p, 4)}`,
-      `q = ${roundToDecimals(q, 4)}`,
-      `Discriminante = ${roundToDecimals(D, 4)}`
-    ];
-
-    let solutions = [];
-    
-    if (Math.abs(D) < 1e-10) {
-      // Una raíz real triple o una real simple y una doble
-      if (Math.abs(p) < 1e-10) {
-        // Raíz triple
-        const x = -b / (3 * a);
-        solutions = [
-          { x: roundToDecimals(x, 4), type: 'real', multiplicity: 3 }
-        ];
-        steps.push('Caso: Raíz triple real', `x = ${roundToDecimals(x, 4)}`);
-      } else {
-        // Una raíz simple y una doble
-        const x1 = (3 * q) / (2 * p);
-        const x2 = -x1 / 2;
-        solutions = [
-          { x: roundToDecimals(x1, 4), type: 'real', multiplicity: 1 },
-          { x: roundToDecimals(x2, 4), type: 'real', multiplicity: 2 }
-        ];
-        steps.push(
-          'Caso: Una raíz simple y una doble',
-          `x₁ = ${roundToDecimals(x1, 4)} (multiplicidad 1)`,
-          `x₂ = ${roundToDecimals(x2, 4)} (multiplicidad 2)`
-        );
-      }
-    } else if (D > 0) {
-      // Una raíz real y dos complejas conjugadas
-      const u = Math.cbrt(-q/2 + Math.sqrt(D));
-      const v = Math.cbrt(-q/2 - Math.sqrt(D));
-      const x1 = u + v - b/(3*a);
-      const realPart = -(u + v)/2 - b/(3*a);
-      const imagPart = (Math.sqrt(3)/2) * (u - v);
-      
-      solutions = [
-        { x: roundToDecimals(x1, 4), type: 'real' },
-        { x: `${roundToDecimals(realPart, 4)} + ${roundToDecimals(imagPart, 4)}i`, type: 'complex' },
-        { x: `${roundToDecimals(realPart, 4)} - ${roundToDecimals(imagPart, 4)}i`, type: 'complex' }
-      ];
-      steps.push(
-        'Caso: Una raíz real y dos complejas conjugadas',
-        `x₁ = ${roundToDecimals(x1, 4)}`,
-        `x₂ = ${solutions[1].x}`,
-        `x₃ = ${solutions[2].x}`
-      );
+    // Detectar el tipo de ecuación y resolverla
+    if (equation.includes('x') && !equation.includes('y')) {
+      return solveLinearEquation(equation);
+    } else if (equation.includes('y')) {
+      throw new Error('Los sistemas de ecuaciones aún no están implementados');
     } else {
-      // Tres raíces reales distintas
-      const phi = Math.acos(-q/(2*Math.sqrt(-Math.pow(p/3, 3))));
-      const r = 2 * Math.sqrt(-p/3);
-      const x1 = r * Math.cos(phi/3) - b/(3*a);
-      const x2 = r * Math.cos((phi + 2*Math.PI)/3) - b/(3*a);
-      const x3 = r * Math.cos((phi + 4*Math.PI)/3) - b/(3*a);
-      
-      solutions = [
-        { x: roundToDecimals(x1, 4), type: 'real' },
-        { x: roundToDecimals(x2, 4), type: 'real' },
-        { x: roundToDecimals(x3, 4), type: 'real' }
-      ];
-      steps.push(
-        'Caso: Tres raíces reales distintas',
-        `x₁ = ${roundToDecimals(x1, 4)}`,
-        `x₂ = ${roundToDecimals(x2, 4)}`,
-        `x₃ = ${roundToDecimals(x3, 4)}`
-      );
+      return evaluateExpression(equation, {});
     }
-
-    solutions.forEach(sol => sol.steps = steps);
-    return solutions;
   } catch (error) {
-    throw new Error(`Error en ecuación cúbica: ${error.message}`);
+    throw new Error(`Error al resolver la ecuación: ${error.message}`);
   }
 };
 
-const validateEquation = (equation) => {
-  if (!equation || typeof equation !== 'string') {
-    throw new Error('La ecuación debe ser una cadena de texto válida');
+// Función para validar una ecuación
+export const validateEquation = (equation) => {
+  if (!equation) {
+    throw new Error('La ecuación está vacía');
   }
   
-  equation = equation.trim();
   if (!equation.includes('=')) {
-    throw new Error('La ecuación debe contener un signo =');
+    throw new Error('La ecuación debe contener un signo igual (=)');
   }
   
-  // Expresión regular corregida
-  const validChars = /^[-+0-9x-z*/()=;,.\s√|²³^]+$/;
-  if (!validChars.test(equation)) {
-    throw new Error('La ecuación contiene caracteres no válidos');
+  // Validar paréntesis balanceados
+  const stack = [];
+  for (const char of equation) {
+    if (char === '(') {
+      stack.push(char);
+    } else if (char === ')') {
+      if (stack.length === 0) {
+        throw new Error('Paréntesis no balanceados');
+      }
+      stack.pop();
+    }
   }
   
-  return equation;
+  if (stack.length > 0) {
+    throw new Error('Paréntesis no balanceados');
+  }
+  
+  // Validar operadores consecutivos
+  if (/[+\-*/^]{2,}/.test(equation)) {
+    throw new Error('Operadores consecutivos no válidos');
+  }
+  
+  return true;
 };
 
-export default solveEquation; 
+export default {
+  solveEquation,
+  validateEquation,
+}; 
